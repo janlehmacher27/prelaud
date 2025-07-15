@@ -1,4 +1,12 @@
 //
+//  SimpleShareTest.swift
+//  prelaud
+//
+//  Created by Jan Lehmacher on 15.07.25.
+//
+
+
+//
 //  Simple Share Sheet Test
 //  Teste das Share Sheet isoliert
 //

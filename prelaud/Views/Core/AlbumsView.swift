@@ -1,8 +1,8 @@
 //
-//  AlbumsView.swift - FIXED MINI PLAYER POSITIONING
+//  AlbumsView.swift - CORRECTED WITH SHARE AND 3-DOTS MENUS
 //  MusicPreview
 //
-//  Fixed bottom clipping of mini player
+//  Fixed to include both existing functionality and share feature
 //
 
 import SwiftUI
@@ -16,8 +16,14 @@ struct AlbumsView: View {
     
     @StateObject private var audioPlayer = AudioPlayerManager.shared
     @StateObject private var profileManager = UserProfileManager.shared
+    @StateObject private var supabaseManager = SupabaseAudioManager.shared
+    @StateObject private var dataManager = DataPersistenceManager.shared
     @State private var selectedTab: AlbumTab = .myAlbums
     @State private var sharedAlbums: [Album] = []
+    
+    // SHARE SHEET STATE
+    @State private var showingShareSheet = false
+    @State private var albumToShare: Album?
     
     #if DEBUG
     @State private var debugTapCount = 0
@@ -69,20 +75,19 @@ struct AlbumsView: View {
                     // MINIMAL SETTINGS ACCESS - Ganz unten
                     minimalSettingsAccess
                         .padding(.top, 40)
-                        .padding(.bottom, audioPlayer.currentSong != nil ? 140 : 60) // FIXED: Mehr Platz für Mini Player
+                        .padding(.bottom, audioPlayer.currentSong != nil ? 140 : 60)
                 }
                 .padding(.horizontal, 24)
             }
             
-            // FIXED Mini Player Overlay - Korrekte Positionierung
+            // FIXED Mini Player Overlay
             VStack {
                 Spacer()
                 
                 if audioPlayer.currentSong != nil {
                     AdaptiveMiniPlayer(service: selectedService)
-                        .padding(.bottom, 0) // FIXED: Kein extra Padding unten
+                        .padding(.bottom, 0)
                         .background(
-                            // FIXED: Zusätzlicher Hintergrund für bessere Sichtbarkeit
                             Rectangle()
                                 .fill(.clear)
                                 .background(.ultraThinMaterial.opacity(0.1))
@@ -90,10 +95,49 @@ struct AlbumsView: View {
                         )
                 }
             }
-            .ignoresSafeArea(.container, edges: .bottom) // FIXED: Safe Area ignorieren für vollständige Sichtbarkeit
+            .ignoresSafeArea(.container, edges: .bottom)
         }
         .onAppear {
+            #if DEBUG
+            debugSupabaseConnection()
+            #endif
+            
+            supabaseManager.migrateFromDropbox()
+            
+            if albums.isEmpty {
+                albums = dataManager.savedAlbums
+            }
             loadSharedAlbums()
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
+        // SHARE SHEET INTEGRATION
+        .sheet(isPresented: $showingShareSheet) {
+            ZStack {
+                Color.green.ignoresSafeArea()
+                VStack(spacing: 20) {
+                    Text("SIMPLE TEST")
+                        .font(.largeTitle)
+                        .foregroundColor(.white)
+                    
+                    if let album = albumToShare {
+                        Text("Album: \(album.title)")
+                            .foregroundColor(.white)
+                    } else {
+                        Text("NO ALBUM FOUND")
+                            .foregroundColor(.white)
+                    }
+                    
+                    Button("Close") {
+                        showingShareSheet = false
+                    }
+                    .padding()
+                    .background(Color.red)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+            }
         }
     }
     
@@ -237,7 +281,8 @@ struct AlbumsView: View {
                         withAnimation(.smooth(duration: 0.4)) {
                             currentAlbum = album
                         }
-                    }
+                    },
+                    onShareAlbum: shareAlbum // SHARE FUNCTION HINZUGEFÜGT
                 )
             case .appleMusic:
                 AppleMusicAlbumsGrid(
@@ -247,7 +292,8 @@ struct AlbumsView: View {
                         withAnimation(.smooth(duration: 0.4)) {
                             currentAlbum = album
                         }
-                    }
+                    },
+                    onShareAlbum: shareAlbum // SHARE FUNCTION HINZUGEFÜGT
                 )
             case .amazonMusic:
                 AmazonMusicAlbumsGrid(
@@ -257,7 +303,8 @@ struct AlbumsView: View {
                         withAnimation(.smooth(duration: 0.4)) {
                             currentAlbum = album
                         }
-                    }
+                    },
+                    onShareAlbum: shareAlbum // SHARE FUNCTION HINZUGEFÜGT
                 )
             case .youtubeMusic:
                 YouTubeMusicAlbumsGrid(
@@ -267,7 +314,8 @@ struct AlbumsView: View {
                         withAnimation(.smooth(duration: 0.4)) {
                             currentAlbum = album
                         }
-                    }
+                    },
+                    onShareAlbum: shareAlbum // SHARE FUNCTION HINZUGEFÜGT
                 )
             }
         }
@@ -383,6 +431,15 @@ struct AlbumsView: View {
         .buttonStyle(MinimalButtonStyle())
     }
     
+    // MARK: - SHARE FUNCTION
+    private func shareAlbum(_ album: Album) {
+        print("🐛 DEBUG: shareAlbum called")
+        print("🐛 DEBUG: Album title: \(album.title)")
+        albumToShare = album
+        showingShareSheet = true
+        print("🐛 DEBUG: showingShareSheet set to: \(showingShareSheet)")
+    }
+    
     // MARK: - Color Helpers
     private var headerTextColor: Color {
         selectedService == .appleMusic ? .black : .white
@@ -400,7 +457,7 @@ struct AlbumsView: View {
         selectedService == .appleMusic ? .black.opacity(0.1) : .white.opacity(0.15)
     }
     
-    // MARK: - Load Shared Albums (Placeholder)
+    // MARK: - Load Shared Albums
     private func loadSharedAlbums() {
         // TODO: Implement actual shared albums loading from server/database
         // For now, we'll add some demo shared albums
@@ -622,10 +679,11 @@ struct YouTubeMusicArtistHeader: View {
     }
 }
 
-// MARK: - Albums Grid Components (alle bestehenden Components bleiben gleich)
+// MARK: - Albums Grid Components mit SHARE UNTERSTÜTZUNG
 struct SpotifyAlbumsGrid: View {
     let albums: [Album]
     let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void // NEU HINZUGEFÜGT
     
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -647,7 +705,8 @@ struct SpotifyAlbumsGrid: View {
                 ForEach(albums, id: \.id) { album in
                     SpotifyAlbumRow(
                         album: album,
-                        onTap: { onAlbumTap(album) }
+                        onTap: { onAlbumTap(album) },
+                        onShare: { onShareAlbum(album) } // SHARE HINZUGEFÜGT
                     )
                 }
             }
@@ -658,6 +717,7 @@ struct SpotifyAlbumsGrid: View {
 struct SpotifyAlbumRow: View {
     let album: Album
     let onTap: () -> Void
+    let onShare: () -> Void // NEU HINZUGEFÜGT
     @StateObject private var audioPlayer = AudioPlayerManager.shared
     @State private var isHovered = false
     
@@ -733,13 +793,20 @@ struct SpotifyAlbumRow: View {
                 
                 Spacer()
                 
-                Button(action: {}) {
+                // 3-DOTS MENU - JETZT IMMER SICHTBAR
+                Menu {
+                    Button("Share Album", action: onShare)
+                    Button("Add to Library") { }
+                    Button("Download") { }
+                    Button("View Artist") { }
+                } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
-                        .opacity(isHovered ? 1.0 : 0.0)
-                        .animation(.easeInOut(duration: 0.2), value: isHovered)
+                        // ENTFERNT: .opacity(isHovered ? 1.0 : 0.0)
+                        // JETZT IMMER SICHTBAR
                 }
+                .buttonStyle(MinimalButtonStyle())
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 16)
@@ -758,46 +825,59 @@ struct SpotifyAlbumRow: View {
     }
 }
 
-// MARK: - Simplified Other Grids
+// MARK: - Simplified Other Grids mit SHARE
 struct AppleMusicAlbumsGrid: View {
     let albums: [Album]
     let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void // NEU HINZUGEFÜGT
     
     var body: some View {
         VStack(spacing: 12) {
             ForEach(albums, id: \.id) { album in
-                Button(action: { onAlbumTap(album) }) {
-                    HStack(spacing: 12) {
-                        if let coverImage = album.coverImage {
-                            Image(uiImage: coverImage)
-                                .resizable()
-                                .aspectRatio(1, contentMode: .fill)
-                                .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.gray.opacity(0.2))
-                                .frame(width: 60, height: 60)
+                HStack(spacing: 12) {
+                    Button(action: { onAlbumTap(album) }) {
+                        HStack(spacing: 12) {
+                            if let coverImage = album.coverImage {
+                                Image(uiImage: coverImage)
+                                    .resizable()
+                                    .aspectRatio(1, contentMode: .fill)
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(.gray.opacity(0.2))
+                                    .frame(width: 60, height: 60)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(album.title)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.black)
+                                Text(album.artist)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                            }
+                            
+                            Spacer()
                         }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(album.title)
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.black)
-                            Text(album.artist)
-                                .font(.system(size: 14))
-                                .foregroundColor(.gray)
-                        }
-                        
-                        Spacer()
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.gray.opacity(0.05))
-                    )
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    // 3-DOTS MENU MIT SHARE
+                    Menu {
+                        Button("Share Album") { onShareAlbum(album) }
+                        Button("Add to Library") { }
+                        Button("View Artist") { }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(.gray)
+                    }
                 }
-                .buttonStyle(PlainButtonStyle())
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.gray.opacity(0.05))
+                )
             }
         }
     }
@@ -806,42 +886,55 @@ struct AppleMusicAlbumsGrid: View {
 struct AmazonMusicAlbumsGrid: View {
     let albums: [Album]
     let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void // NEU HINZUGEFÜGT
     
     var body: some View {
         VStack(spacing: 12) {
             ForEach(albums, id: \.id) { album in
-                Button(action: { onAlbumTap(album) }) {
-                    HStack(spacing: 12) {
-                        if let coverImage = album.coverImage {
-                            Image(uiImage: coverImage)
-                                .resizable()
-                                .aspectRatio(1, contentMode: .fill)
-                                .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.white.opacity(0.1))
-                                .frame(width: 60, height: 60)
+                HStack(spacing: 12) {
+                    Button(action: { onAlbumTap(album) }) {
+                        HStack(spacing: 12) {
+                            if let coverImage = album.coverImage {
+                                Image(uiImage: coverImage)
+                                    .resizable()
+                                    .aspectRatio(1, contentMode: .fill)
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(.white.opacity(0.1))
+                                    .frame(width: 60, height: 60)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(album.title)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                Text(album.artist)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            
+                            Spacer()
                         }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(album.title)
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.white)
-                            Text(album.artist)
-                                .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                        
-                        Spacer()
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.white.opacity(0.05))
-                    )
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    // 3-DOTS MENU MIT SHARE
+                    Menu {
+                        Button("Share Album") { onShareAlbum(album) }
+                        Button("Download") { }
+                        Button("Add to Playlist") { }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(.white.opacity(0.7))
+                    }
                 }
-                .buttonStyle(PlainButtonStyle())
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.05))
+                )
             }
         }
     }
@@ -850,42 +943,57 @@ struct AmazonMusicAlbumsGrid: View {
 struct YouTubeMusicAlbumsGrid: View {
     let albums: [Album]
     let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void // NEU HINZUGEFÜGT
     
     var body: some View {
         VStack(spacing: 12) {
             ForEach(albums, id: \.id) { album in
-                Button(action: { onAlbumTap(album) }) {
-                    HStack(spacing: 12) {
-                        if let coverImage = album.coverImage {
-                            Image(uiImage: coverImage)
-                                .resizable()
-                                .aspectRatio(1, contentMode: .fill)
-                                .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.white.opacity(0.1))
-                                .frame(width: 60, height: 60)
+                HStack(spacing: 12) {
+                    Button(action: { onAlbumTap(album) }) {
+                        HStack(spacing: 12) {
+                            if let coverImage = album.coverImage {
+                                Image(uiImage: coverImage)
+                                    .resizable()
+                                    .aspectRatio(1, contentMode: .fill)
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(.white.opacity(0.1))
+                                    .frame(width: 60, height: 60)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(album.title)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                Text(album.artist)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            
+                            Spacer()
                         }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(album.title)
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.white)
-                            Text(album.artist)
-                                .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                        
-                        Spacer()
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.white.opacity(0.05))
-                    )
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    // 3-DOTS MENU MIT SHARE
+                    Menu {
+                        Button("Share Album") { onShareAlbum(album) }
+                        Button("Add to Queue") { }
+                        Button("Start Radio") { }
+                        Button("View Artist") { }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(.white.opacity(0.7))
+                            .rotationEffect(.degrees(90))
+                    }
                 }
-                .buttonStyle(PlainButtonStyle())
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.05))
+                )
             }
         }
     }
