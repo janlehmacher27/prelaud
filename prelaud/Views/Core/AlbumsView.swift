@@ -1,8 +1,8 @@
 //
-//  AlbumsView.swift - ORIGINAL AUTHENTIC DESIGN RESTORED
+//  AlbumsView.swift - WITH CONTEXT MENU IMPLEMENTATION
 //  prelaud
 //
-//  Restored original streaming platform design with proper layout
+//  Enhanced with long press context menu for album management
 //
 
 import SwiftUI
@@ -63,6 +63,8 @@ struct AlbumsView: View {
     @State private var pendingRequests: [SharingRequest] = []
     @State private var activeSheet: SheetType?
     @State private var albumToShare: Album?
+    @State private var showingDeleteAlert = false
+    @State private var albumToDelete: Album?
     
     #if DEBUG
     @State private var debugTapCount = 0
@@ -221,6 +223,18 @@ struct AlbumsView: View {
                 AlbumShareSheet(album: album)
             }
         }
+        .alert("Delete Album", isPresented: $showingDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                if let album = albumToDelete {
+                    confirmDeleteAlbum(album)
+                }
+            }
+        } message: {
+            if let album = albumToDelete {
+                Text("Are you sure you want to delete \"\(album.title)\"? This action cannot be undone.")
+            }
+        }
     }
     
     // MARK: - View Components
@@ -264,7 +278,7 @@ struct AlbumsView: View {
                         .padding(.horizontal, 16)
                     }
                     
-                    // Albums grid
+                    // Albums grid with context menu
                     authenticAlbumsGrid
                     
                     // Add album button centered below albums
@@ -306,10 +320,12 @@ struct AlbumsView: View {
     private var authenticAlbumsGrid: some View {
         switch selectedService {
         case .spotify:
-            SpotifyAlbumsGrid(
+            SpotifyAlbumsGridWithContextMenu(
                 albums: albums,
                 onAlbumTap: { selectAlbum($0) },
-                onShareAlbum: { shareAlbum($0) }
+                onShareAlbum: { shareAlbum($0) },
+                onDeleteAlbum: { deleteAlbum($0) },
+                onEditAlbum: { editAlbum($0) }
             )
         case .appleMusic:
             ComingSoonView(service: "Apple Music")
@@ -468,6 +484,36 @@ struct AlbumsView: View {
         activeSheet = .share(album)
     }
     
+    private func deleteAlbum(_ album: Album) {
+        HapticFeedbackManager.shared.lightImpact()
+        albumToDelete = album
+        showingDeleteAlert = true
+    }
+    
+    private func confirmDeleteAlbum(_ album: Album) {
+        HapticFeedbackManager.shared.mediumImpact()
+        
+        // Remove from albums array with animation
+        withAnimation(.smooth(duration: 0.3)) {
+            albums.removeAll { $0.id == album.id }
+        }
+        
+        // Remove from persistent storage
+        dataManager.deleteAlbum(album)
+        
+        // Reset state
+        albumToDelete = nil
+        
+        HapticFeedbackManager.shared.success()
+        print("🗑️ Album deleted: \(album.title)")
+    }
+    
+    private func editAlbum(_ album: Album) {
+        HapticFeedbackManager.shared.lightImpact()
+        // TODO: Implement edit functionality
+        print("✏️ Edit album: \(album.title)")
+    }
+    
     private func loadSharedAlbums() {
         Task {
             await MainActor.run {
@@ -564,7 +610,153 @@ struct AlbumsView: View {
     }
 }
 
-// MARK: - Supporting Views
+// MARK: - Enhanced Spotify Albums Grid with Context Menu
+struct SpotifyAlbumsGridWithContextMenu: View {
+    let albums: [Album]
+    let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void
+    let onDeleteAlbum: (Album) -> Void
+    let onEditAlbum: (Album) -> Void
+    
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(albums, id: \.id) { album in
+                SpotifyAlbumRowWithContextMenu(
+                    album: album,
+                    onTap: { onAlbumTap(album) },
+                    onShare: { onShareAlbum(album) },
+                    onDelete: { onDeleteAlbum(album) },
+                    onEdit: { onEditAlbum(album) }
+                )
+            }
+        }
+        .padding(.horizontal, 0)
+    }
+}
+
+// MARK: - Enhanced Spotify Album Row with Context Menu
+struct SpotifyAlbumRowWithContextMenu: View {
+    let album: Album
+    let onTap: () -> Void
+    let onShare: () -> Void
+    let onDelete: () -> Void
+    let onEdit: () -> Void
+    @State private var isPressed = false
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Large Square Album Cover
+                Group {
+                    if let coverImage = album.coverImage {
+                        Image(uiImage: coverImage)
+                            .resizable()
+                            .aspectRatio(1, contentMode: .fill)
+                    } else {
+                        Rectangle()
+                            .fill(Color(red: 0.25, green: 0.25, blue: 0.25))
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 35))
+                                    .foregroundColor(.white.opacity(0.4))
+                            )
+                    }
+                }
+                .frame(width: 92, height: 92)
+                .cornerRadius(4)
+                
+                // Album Info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(album.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.leading)
+                    
+                    Text(getAlbumYear(album))
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                // More Options Button
+                Button(action: onShare) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.vertical, 12)
+            .padding(.leading, 16)
+            .padding(.trailing, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isPressed ? Color.white.opacity(0.08) : Color.clear)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(isPressed ? 0.98 : 1.0)
+        .onLongPressGesture(minimumDuration: 0.0, maximumDistance: .infinity, perform: {}, onPressingChanged: { pressing in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isPressed = pressing
+            }
+        })
+        // CONTEXT MENU - Long Press activated
+        .contextMenu {
+            // Play Button
+            Button(action: onTap) {
+                Label("Play Album", systemImage: "play.fill")
+            }
+            
+            // Share Button
+            Button(action: onShare) {
+                Label("Share Album", systemImage: "square.and.arrow.up")
+            }
+            
+            // Add to Playlist
+            Button(action: {
+                HapticFeedbackManager.shared.lightImpact()
+                print("📋 Add to playlist: \(album.title)")
+                // TODO: Implement add to playlist functionality
+            }) {
+                Label("Add to Playlist", systemImage: "plus.circle")
+            }
+            
+            // Download Album
+            Button(action: {
+                HapticFeedbackManager.shared.lightImpact()
+                print("⬇️ Download: \(album.title)")
+                // TODO: Implement download functionality
+            }) {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+            
+            Divider()
+            
+            // Edit Album
+            Button(action: onEdit) {
+                Label("Edit Album", systemImage: "pencil")
+            }
+            
+            // Delete Album (destructive)
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete Album", systemImage: "trash")
+            }
+        }
+    }
+    
+    private func getAlbumYear(_ album: Album) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy"
+        return formatter.string(from: album.releaseDate)
+    }
+}
+
+// MARK: - Supporting Views (unchanged)
 
 struct TabButton: View {
     let tab: AlbumsView.AlbumTab
@@ -784,369 +976,6 @@ struct ComingSoonView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 100)
-    }
-}
-
-struct SpotifyAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        LazyVStack(spacing: 0) {
-            ForEach(albums, id: \.id) { album in
-                SpotifyAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-        .padding(.horizontal, 0)
-    }
-}
-
-struct SpotifyAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    @State private var isPressed = false
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Large Square Album Cover (doppelt so groß)
-                Group {
-                    if let coverImage = album.coverImage {
-                        Image(uiImage: coverImage)
-                            .resizable()
-                            .aspectRatio(1, contentMode: .fill)
-                    } else {
-                        Rectangle()
-                            .fill(Color(red: 0.25, green: 0.25, blue: 0.25))
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 35))
-                                    .foregroundColor(.white.opacity(0.4))
-                            )
-                    }
-                }
-                .frame(width: 92, height: 92)
-                .cornerRadius(4)
-                
-                // Album Info
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(album.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .multilineTextAlignment(.leading)
-                    
-                    Text(getAlbumYear(album))
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(.white.opacity(0.7))
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                // More Options Button
-                Button(action: onShare) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.6))
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
-            .padding(.vertical, 12)
-            .padding(.leading, 16)
-            .padding(.trailing, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isPressed ? Color.white.opacity(0.08) : Color.clear)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isPressed ? 0.98 : 1.0)
-        .onLongPressGesture(minimumDuration: 0.0, maximumDistance: .infinity, perform: {}, onPressingChanged: { pressing in
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isPressed = pressing
-            }
-        })
-    }
-    
-    private func getAlbumYear(_ album: Album) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy"
-        return formatter.string(from: album.releaseDate)
-    }
-}
-
-struct AppleMusicAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(albums, id: \.id) { album in
-                AppleMusicAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct AppleMusicAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onTap) {
-                HStack(spacing: 12) {
-                    albumCover
-                    albumInfo
-                    Spacer()
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            shareMenu
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.gray.opacity(0.05))
-        )
-    }
-    
-    private var albumCover: some View {
-        Group {
-            if let coverImage = album.coverImage {
-                Image(uiImage: coverImage)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 60, height: 60)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundColor(.gray.opacity(0.4))
-                    )
-            }
-        }
-    }
-    
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.black)
-                .lineLimit(1)
-            
-            Text(album.artist)
-                .font(.system(size: 14))
-                .foregroundColor(.black.opacity(0.6))
-                .lineLimit(1)
-            
-            Text("\(album.songs.count) songs")
-                .font(.system(size: 12))
-                .foregroundColor(.black.opacity(0.4))
-                .lineLimit(1)
-        }
-    }
-    
-    private var shareMenu: some View {
-        Button(action: onShare) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
-struct AmazonMusicAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(albums, id: \.id) { album in
-                AmazonMusicAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct AmazonMusicAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                albumCover
-                albumInfo
-                Spacer()
-                shareButton
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var albumCover: some View {
-        Group {
-            if let coverImage = album.coverImage {
-                Image(uiImage: coverImage)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 56, height: 56)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white.opacity(0.3))
-                    )
-            }
-        }
-    }
-    
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white)
-                .lineLimit(1)
-            
-            Text(album.artist)
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.7))
-                .lineLimit(1)
-            
-            Text("\(album.songs.count) songs")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.5))
-                .lineLimit(1)
-        }
-    }
-    
-    private var shareButton: some View {
-        Button(action: onShare) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
-struct YouTubeMusicAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(albums, id: \.id) { album in
-                YouTubeMusicAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct YouTubeMusicAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                albumCover
-                albumInfo
-                Spacer()
-                shareButton
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var albumCover: some View {
-        Group {
-            if let coverImage = album.coverImage {
-                Image(uiImage: coverImage)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 56, height: 56)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white.opacity(0.3))
-                    )
-            }
-        }
-    }
-    
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white)
-                .lineLimit(1)
-            
-            Text(album.artist)
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.7))
-                .lineLimit(1)
-            
-            Text("\(album.songs.count) songs")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.5))
-                .lineLimit(1)
-        }
-    }
-    
-    private var shareButton: some View {
-        Button(action: onShare) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-        }
-        .buttonStyle(PlainButtonStyle())
     }
 }
 
@@ -1428,7 +1257,6 @@ func fetchPendingSharingRequests() async throws -> [SharingRequest] {
     }
 }
 
-// FIXED: Simplified approveSharingRequest function
 @MainActor
 func approveSharingRequest(_ request: SharingRequest) async throws {
     let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"

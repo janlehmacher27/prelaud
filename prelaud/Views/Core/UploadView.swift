@@ -1,8 +1,8 @@
 //
-//  UploadView.swift - MINIMAL & ELEGANT DESIGN (COMPLETE FIXED VERSION)
+//  UploadView.swift - ENHANCED WITH YEAR SELECTION
 //  MusicPreview
 //
-//  Clean, minimalist upload interface with hidden test features
+//  Enhanced album creation with year selection
 //
 
 import SwiftUI
@@ -33,6 +33,7 @@ struct UploadView: View {
     
     @State private var currentStep: UploadStep = .albumInfo
     @State private var albumTitle = ""
+    @State private var albumYear = Calendar.current.component(.year, from: Date())
     @State private var selectedCoverImage: UIImage?
     @State private var songs: [AudioFile] = []
     
@@ -62,8 +63,9 @@ struct UploadView: View {
             
             switch currentStep {
             case .albumInfo:
-                MinimalAlbumInfoStep(
+                EnhancedAlbumInfoStep(
                     albumTitle: $albumTitle,
+                    albumYear: $albumYear,
                     artistName: artistName,
                     selectedCoverImage: $selectedCoverImage,
                     showSecretTestButton: $showSecretTestButton,
@@ -88,6 +90,7 @@ struct UploadView: View {
             case .songSelection:
                 MinimalSongSelectionStep(
                     albumTitle: albumTitle,
+                    albumYear: albumYear,
                     artistName: artistName,
                     selectedCoverImage: selectedCoverImage,
                     songs: $songs,
@@ -127,22 +130,34 @@ struct UploadView: View {
             )
         }
         
+        // Create date from year
+        let releaseDate = createDateFromYear(albumYear)
+        
         let album = Album(
             title: albumTitle,
             artist: artistName,
             songs: convertedSongs,
             coverImage: selectedCoverImage,
-            releaseDate: Date()
+            releaseDate: releaseDate
         )
         
         onAlbumCreated(album)
         onDismiss()
     }
+    
+    private func createDateFromYear(_ year: Int) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = 1
+        components.day = 1
+        return Calendar.current.date(from: components) ?? Date()
+    }
 }
 
-// MARK: - Minimal Album Info Step
-struct MinimalAlbumInfoStep: View {
+// MARK: - Enhanced Album Info Step with Year Selection
+struct EnhancedAlbumInfoStep: View {
     @Binding var albumTitle: String
+    @Binding var albumYear: Int
     let artistName: String
     @Binding var selectedCoverImage: UIImage?
     @Binding var showSecretTestButton: Bool
@@ -152,7 +167,11 @@ struct MinimalAlbumInfoStep: View {
     let onAlbumCreated: (Album) -> Void
     
     @State private var showingImagePicker = false
+    @State private var showingYearPicker = false
     @FocusState private var isAlbumTitleFocused: Bool
+    
+    // Year range for picker
+    private let yearRange = Array(1950...2030)
     
     var body: some View {
         VStack(spacing: 0) {
@@ -201,7 +220,7 @@ struct MinimalAlbumInfoStep: View {
                     }
                     .padding(.top, 40)
                     
-                    // Secret Test Button (only appears after 7 taps)
+                    // Secret Test Button
                     if showSecretTestButton {
                         Button(action: createTestAlbum) {
                             HStack(spacing: 8) {
@@ -231,8 +250,9 @@ struct MinimalAlbumInfoStep: View {
                         showingImagePicker: $showingImagePicker
                     )
                     
-                    // Clean Text Fields - nur Album Title
-                    VStack(spacing: 24) {
+                    // Enhanced Form Fields
+                    VStack(spacing: 32) {
+                        // Album Title
                         MinimalTextField(
                             text: $albumTitle,
                             placeholder: "Album title",
@@ -240,7 +260,44 @@ struct MinimalAlbumInfoStep: View {
                         )
                         .focused($isAlbumTitleFocused)
                         
-                        // INFO: Artist Name aus Profil
+                        // Release Year Picker
+                        VStack(spacing: 16) {
+                            HStack {
+                                Text("release year")
+                                    .font(.system(size: 11, weight: .light, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.4))
+                                    .tracking(1.0)
+                                
+                                Spacer()
+                            }
+                            
+                            Button(action: {
+                                HapticFeedbackManager.shared.lightImpact()
+                                showingYearPicker = true
+                            }) {
+                                HStack {
+                                    Text("\(albumYear)")
+                                        .font(.system(size: 16, weight: .light))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.white.opacity(0.3))
+                                }
+                                .padding(.vertical, 8)
+                                .overlay(
+                                    Rectangle()
+                                        .fill(.white.opacity(0.1))
+                                        .frame(height: 0.5),
+                                    alignment: .bottom
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        
+                        // Artist Name Info
                         VStack(spacing: 8) {
                             Text("Artist name will be taken from your profile")
                                 .font(.system(size: 12))
@@ -260,13 +317,14 @@ struct MinimalAlbumInfoStep: View {
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(selectedImage: $selectedCoverImage)
         }
+        .sheet(isPresented: $showingYearPicker) {
+            YearPickerSheet(selectedYear: $albumYear, isPresented: $showingYearPicker)
+        }
         .onTapGesture {
-            // Hide keyboard on background tap
             isAlbumTitleFocused = false
         }
     }
     
-    // MARK: - Secret Test Album Creation
     private func createTestAlbum() {
         HapticFeedbackManager.shared.heavyImpact()
         
@@ -275,22 +333,7 @@ struct MinimalAlbumInfoStep: View {
             Song(title: "Digital Heart", artist: artistName, duration: 183, isExplicit: false),
             Song(title: "City Rain", artist: artistName, duration: 227, isExplicit: false),
             Song(title: "Midnight Drive", artist: artistName, duration: 198, isExplicit: false),
-            Song(title: "Electric Dreams", artist: artistName, duration: 241, isExplicit: true),
-            Song(title: "Sunset Boulevard", artist: artistName, duration: 215, isExplicit: false),
-            Song(title: "Cosmic Waves", artist: artistName, duration: 192, isExplicit: false),
-            Song(title: "Synthetic Love", artist: artistName, duration: 234, isExplicit: false),
-            Song(title: "Neon Paradise", artist: artistName, duration: 208, isExplicit: false),
-            Song(title: "Digital Shadows", artist: artistName, duration: 189, isExplicit: false),
-            Song(title: "Chrome Hearts", artist: artistName, duration: 223, isExplicit: true),
-            Song(title: "Virtual Reality", artist: artistName, duration: 197, isExplicit: false),
-            Song(title: "Laser Nights", artist: artistName, duration: 245, isExplicit: false),
-            Song(title: "Binary Code", artist: artistName, duration: 201, isExplicit: false),
-            Song(title: "Retro Future", artist: artistName, duration: 218, isExplicit: false),
-            Song(title: "Pixel Dreams", artist: artistName, duration: 186, isExplicit: false),
-            Song(title: "Cyberpunk Soul", artist: artistName, duration: 239, isExplicit: true),
-            Song(title: "Hologram Love", artist: artistName, duration: 212, isExplicit: false),
-            Song(title: "Matrix Mind", artist: artistName, duration: 194, isExplicit: false),
-            Song(title: "Quantum Beat", artist: artistName, duration: 229, isExplicit: false)
+            Song(title: "Electric Dreams", artist: artistName, duration: 241, isExplicit: true)
         ]
         
         let testAlbum = Album(
@@ -298,7 +341,7 @@ struct MinimalAlbumInfoStep: View {
             artist: artistName,
             songs: testSongs,
             coverImage: createMinimalTestCoverImage(),
-            releaseDate: Date()
+            releaseDate: createDateFromYear(albumYear)
         )
         
         onAlbumCreated(testAlbum)
@@ -310,7 +353,6 @@ struct MinimalAlbumInfoStep: View {
         let renderer = UIGraphicsImageRenderer(size: size)
         
         return renderer.image { context in
-            // Simple gradient
             let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                     colors: [
                                         UIColor.black.cgColor,
@@ -323,7 +365,6 @@ struct MinimalAlbumInfoStep: View {
                                                end: CGPoint(x: size.width, y: size.height),
                                                options: [])
             
-            // Simple text
             let titleAttributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 24, weight: .light),
                 .foregroundColor: UIColor.white.withAlphaComponent(0.8)
@@ -334,80 +375,79 @@ struct MinimalAlbumInfoStep: View {
             titleString.draw(in: titleRect)
         }
     }
+    
+    private func createDateFromYear(_ year: Int) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = 1
+        components.day = 1
+        return Calendar.current.date(from: components) ?? Date()
+    }
 }
 
-// MARK: - Minimal Cover Image Selector
-struct MinimalCoverImageSelector: View {
-    @Binding var selectedImage: UIImage?
-    @Binding var showingImagePicker: Bool
+// MARK: - Year Picker Sheet
+struct YearPickerSheet: View {
+    @Binding var selectedYear: Int
+    @Binding var isPresented: Bool
+    
+    private let yearRange = Array(1950...2030)
     
     var body: some View {
-        Button(action: {
-            HapticFeedbackManager.shared.lightImpact()
-            showingImagePicker = true
-        }) {
-            if let image = selectedImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 160, height: 160)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                    )
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.white.opacity(0.03))
-                    .frame(width: 160, height: 160)
-                    .overlay(
-                        VStack(spacing: 8) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 24, weight: .ultraLight))
-                                .foregroundColor(.white.opacity(0.4))
-                            
-                            Text("Add Cover")
-                                .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.4))
-                        }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                    )
+        ZStack {
+            Color.black.opacity(0.95).ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Button("Cancel") {
+                        HapticFeedbackManager.shared.lightImpact()
+                        isPresented = false
+                    }
+                    .font(.system(size: 17))
+                    .foregroundColor(.white.opacity(0.6))
+                    
+                    Spacer()
+                    
+                    Text("Release Year")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    Button("Done") {
+                        HapticFeedbackManager.shared.success()
+                        isPresented = false
+                    }
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
+                
+                // Year Picker
+                Picker("Year", selection: $selectedYear) {
+                    ForEach(yearRange, id: \.self) { year in
+                        Text("\(year)")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.white)
+                            .tag(year)
+                    }
+                }
+                .pickerStyle(WheelPickerStyle())
+                .preferredColorScheme(.dark)
+                .padding(.horizontal, 24)
+                
+                Spacer()
             }
         }
-        .buttonStyle(MinimalButtonStyle())
     }
 }
 
-// MARK: - Minimal Text Field
-struct MinimalTextField: View {
-    @Binding var text: String
-    let placeholder: String
-    let isActive: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField(placeholder, text: $text)
-                .font(.system(size: 17))
-                .foregroundColor(.white)
-                .textFieldStyle(PlainTextFieldStyle())
-                .onChange(of: text) { _, _ in
-                    HapticFeedbackManager.shared.lightImpact()
-                }
-            
-            Rectangle()
-                .fill(isActive ? .white : .white.opacity(0.2))
-                .frame(height: 0.5)
-                .animation(.easeInOut(duration: 0.2), value: isActive)
-        }
-    }
-}
-
-// MARK: - Minimal Song Selection Step
+// MARK: - Enhanced Song Selection Step
 struct MinimalSongSelectionStep: View {
     let albumTitle: String
+    let albumYear: Int
     let artistName: String
     let selectedCoverImage: UIImage?
     @Binding var songs: [AudioFile]
@@ -449,15 +489,19 @@ struct MinimalSongSelectionStep: View {
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 32) {
-                    // Title
+                    // Enhanced Title with Year
                     VStack(spacing: 8) {
                         Text("Add Songs")
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(.white)
                         
-                        Text("\(songs.count) song\(songs.count == 1 ? "" : "s") added")
-                            .font(.system(size: 17))
+                        Text("to \(albumTitle) (\(albumYear))")
+                            .font(.system(size: 16))
                             .foregroundColor(.white.opacity(0.6))
+                        
+                        Text("\(songs.count) song\(songs.count == 1 ? "" : "s") added")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.4))
                     }
                     .padding(.top, 20)
                     
@@ -567,7 +611,6 @@ struct MinimalSongSelectionStep: View {
                     processingStatus = "Uploading to cloud..."
                 }
                 
-                // FIXED: Use underscore to ignore unused result
                 _ = try await SupabaseAudioManager.shared.uploadAudioFile(
                     tempURL,
                     filename: uniqueFilename,
@@ -616,14 +659,80 @@ struct MinimalSongSelectionStep: View {
         let audioFile = songs[index]
         SupabaseAudioManager.shared.cancelUpload(for: audioFile.songId)
         
-        // FIXED: Assign result to underscore to suppress warning
         _ = withAnimation(.smooth(duration: 0.3)) {
             songs.remove(at: index)
         }
     }
 }
 
-// MARK: - Minimal Components
+// MARK: - Supporting Components (unchanged)
+struct MinimalCoverImageSelector: View {
+    @Binding var selectedImage: UIImage?
+    @Binding var showingImagePicker: Bool
+    
+    var body: some View {
+        Button(action: {
+            HapticFeedbackManager.shared.lightImpact()
+            showingImagePicker = true
+        }) {
+            if let image = selectedImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(1, contentMode: .fill)
+                    .frame(width: 160, height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                    )
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.white.opacity(0.03))
+                    .frame(width: 160, height: 160)
+                    .overlay(
+                        VStack(spacing: 8) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 24, weight: .ultraLight))
+                                .foregroundColor(.white.opacity(0.4))
+                            
+                            Text("Add Cover")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                    )
+            }
+        }
+        .buttonStyle(MinimalButtonStyle())
+    }
+}
+
+struct MinimalTextField: View {
+    @Binding var text: String
+    let placeholder: String
+    let isActive: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(placeholder, text: $text)
+                .font(.system(size: 17))
+                .foregroundColor(.white)
+                .textFieldStyle(PlainTextFieldStyle())
+                .onChange(of: text) { _, _ in
+                    HapticFeedbackManager.shared.lightImpact()
+                }
+            
+            Rectangle()
+                .fill(isActive ? .white : .white.opacity(0.2))
+                .frame(height: 0.5)
+                .animation(.easeInOut(duration: 0.2), value: isActive)
+        }
+    }
+}
+
 struct MinimalAddButton: View {
     let action: () -> Void
     
@@ -658,7 +767,6 @@ struct MinimalAudioFileRow: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                // Simple icon
                 Circle()
                     .fill(.white.opacity(0.1))
                     .frame(width: 40, height: 40)
@@ -667,86 +775,6 @@ struct MinimalAudioFileRow: View {
                             .font(.system(size: 16))
                             .foregroundColor(.white.opacity(0.6))
                     )
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(audioFile.originalFilename)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    
-                    Text(formatDuration(audioFile.duration))
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                
-                Spacer()
-                
-                Button(action: onDelete) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(MinimalButtonStyle())
-            }
-            
-            // Editable title
-            TextField("Song title", text: $audioFile.songTitle)
-                .font(.system(size: 16))
-                .foregroundColor(.white.opacity(0.8))
-                .textFieldStyle(PlainTextFieldStyle())
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.white.opacity(0.04))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                        )
-                )
-                .onChange(of: audioFile.songTitle) { _, _ in
-                    HapticFeedbackManager.shared.lightImpact()
-                }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.white.opacity(0.02))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                )
-        )
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-}
-
-struct MinimalProcessingIndicator: View {
-    let status: String
-    let progress: Double
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 12) {
-                // Animated progress circle
-                ZStack {
-                    Circle()
-                        .stroke(.white.opacity(0.1), lineWidth: 2)
-                        .frame(width: 24, height: 24)
-                    
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(.white, lineWidth: 2)
-                        .frame(width: 24, height: 24)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.smooth(duration: 0.3), value: progress)
-                }
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(status)
@@ -763,7 +791,6 @@ struct MinimalProcessingIndicator: View {
                 Spacer()
             }
             
-            // Minimal progress bar
             if progress > 0 {
                 GeometryReader { geometry in
                     RoundedRectangle(cornerRadius: 1)
@@ -837,4 +864,82 @@ struct AudioFilePicker: UIViewControllerRepresentable {
         onAlbumCreated: { _ in },
         onDismiss: { }
     )
+}, spacing: 4) {
+                    Text(audioFile.originalFilename)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    Text(formatDuration(audioFile.duration))
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                
+                Spacer()
+                
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.4))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(MinimalButtonStyle())
+            }
+            
+            TextField("Song title", text: $audioFile.songTitle)
+                .font(.system(size: 16))
+                .foregroundColor(.white.opacity(0.8))
+                .textFieldStyle(PlainTextFieldStyle())
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.white.opacity(0.04))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                        )
+                )
+                .onChange(of: audioFile.songTitle) { _, _ in
+                    HapticFeedbackManager.shared.lightImpact()
+                }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.white.opacity(0.02))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                )
+        )
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
 }
+
+struct MinimalProcessingIndicator: View {
+    let status: String
+    let progress: Double
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .stroke(.white.opacity(0.1), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                    
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(.white, lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.smooth(duration: 0.3), value: progress)
+                }
+                
+                VStack(alignment: .leading
