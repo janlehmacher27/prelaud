@@ -170,97 +170,86 @@ struct EnhancedAlbumInfoStep: View {
     @State private var showingYearPicker = false
     @FocusState private var isAlbumTitleFocused: Bool
     
-    // Year range for picker
-    private let yearRange = Array(1950...2030)
-    
     var body: some View {
         VStack(spacing: 0) {
-            // Minimal Header
+            // Header
             HStack {
-                Button("Cancel") {
-                    HapticFeedbackManager.shared.buttonTap()
+                Button("cancel") {
+                    HapticFeedbackManager.shared.lightImpact()
                     onDismiss()
                 }
-                .font(.system(size: 17))
-                .foregroundColor(.white.opacity(0.6))
+                .font(.system(size: 11, weight: .light, design: .monospaced))
+                .foregroundColor(.white.opacity(0.4))
+                .tracking(1.0)
                 
                 Spacer()
                 
-                Button("Next") {
-                    HapticFeedbackManager.shared.buttonTap()
-                    if albumTitle.isEmpty { albumTitle = "Untitled Album" }
+                Text("new album")
+                    .font(.system(size: 11, weight: .light, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .tracking(1.0)
+                    .onTapGesture {
+                        secretTapCount += 1
+                        if secretTapCount >= 5 {
+                            withAnimation(.spring()) {
+                                showSecretTestButton = true
+                            }
+                        }
+                    }
+                
+                Spacer()
+                
+                Button("next") {
+                    HapticFeedbackManager.shared.lightImpact()
                     onNext()
                 }
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(.white)
+                .font(.system(size: 11, weight: .light, design: .monospaced))
+                .foregroundColor(albumTitle.isEmpty ? .white.opacity(0.3) : .white.opacity(0.8))
+                .tracking(1.0)
+                .disabled(albumTitle.isEmpty)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 8)
+            .padding(.top, 20)
+            .padding(.bottom, 32)
             
+            // Content
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 40) {
-                    // Title with secret tap area
-                    VStack(spacing: 8) {
-                        Text("New Album")
-                            .font(.system(size: 34, weight: .bold))
-                            .foregroundColor(.white)
-                            .onTapGesture {
-                                secretTapCount += 1
-                                HapticFeedbackManager.shared.lightImpact()
-                                if secretTapCount >= 7 {
-                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                                        showSecretTestButton = true
-                                    }
-                                }
-                            }
-                        
-                        Text("by \(artistName)")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                    .padding(.top, 40)
-                    
-                    // Secret Test Button
-                    if showSecretTestButton {
-                        Button(action: createTestAlbum) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "flask.fill")
-                                    .font(.system(size: 14))
-                                Text("Create Test Album")
-                                    .font(.system(size: 15, weight: .medium))
-                            }
-                            .foregroundColor(.white.opacity(0.4))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.white.opacity(0.05))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                                    )
-                            )
+                    // Cover Image Selector
+                    MinimalCoverImageSelector(selectedImage: $selectedCoverImage)
+                        .onTapGesture {
+                            HapticFeedbackManager.shared.lightImpact()
+                            showingImagePicker = true
                         }
-                        .transition(.scale.combined(with: .opacity))
-                    }
                     
-                    // Minimal Cover Image Selector
-                    MinimalCoverImageSelector(
-                        selectedImage: $selectedCoverImage,
-                        showingImagePicker: $showingImagePicker
-                    )
-                    
-                    // Enhanced Form Fields
+                    // Album Details Form
                     VStack(spacing: 32) {
                         // Album Title
-                        MinimalTextField(
-                            text: $albumTitle,
-                            placeholder: "Album title",
-                            isActive: isAlbumTitleFocused
-                        )
-                        .focused($isAlbumTitleFocused)
+                        VStack(spacing: 16) {
+                            HStack {
+                                Text("album title")
+                                    .font(.system(size: 11, weight: .light, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.4))
+                                    .tracking(1.0)
+                                
+                                Spacer()
+                            }
+                            
+                            VStack(spacing: 8) {
+                                TextField("Enter album title", text: $albumTitle)
+                                    .font(.system(size: 16, weight: .light))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .textFieldStyle(PlainTextFieldStyle())
+                                    .focused($isAlbumTitleFocused)
+                                
+                                Rectangle()
+                                    .fill(isAlbumTitleFocused ? .white.opacity(0.2) : .white.opacity(0.1))
+                                    .frame(height: 0.5)
+                                    .animation(.easeInOut(duration: 0.2), value: isAlbumTitleFocused)
+                            }
+                        }
                         
-                        // Release Year Picker
+                        // Year Selection
                         VStack(spacing: 16) {
                             HStack {
                                 Text("release year")
@@ -282,8 +271,8 @@ struct EnhancedAlbumInfoStep: View {
                                     
                                     Spacer()
                                     
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 12))
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10))
                                         .foregroundColor(.white.opacity(0.3))
                                 }
                                 .padding(.vertical, 8)
@@ -307,6 +296,18 @@ struct EnhancedAlbumInfoStep: View {
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.white.opacity(0.6))
                         }
+                    }
+                    
+                    // Secret Test Button
+                    if showSecretTestButton {
+                        Button("create test album") {
+                            createTestAlbum()
+                        }
+                        .font(.system(size: 11, weight: .light, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.4))
+                        .tracking(1.0)
+                        .padding(.top, 20)
+                        .transition(.opacity.combined(with: .scale))
                     }
                     
                     Spacer(minLength: 100)
@@ -364,15 +365,6 @@ struct EnhancedAlbumInfoStep: View {
                                                start: CGPoint(x: 0, y: 0),
                                                end: CGPoint(x: size.width, y: size.height),
                                                options: [])
-            
-            let titleAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 24, weight: .light),
-                .foregroundColor: UIColor.white.withAlphaComponent(0.8)
-            ]
-            
-            let titleString = NSAttributedString(string: "MIDNIGHT\nDREAMS", attributes: titleAttributes)
-            let titleRect = CGRect(x: 40, y: size.height - 120, width: size.width - 80, height: 80)
-            titleString.draw(in: titleRect)
         }
     }
     
@@ -462,48 +454,82 @@ struct MinimalSongSelectionStep: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Minimal Header
+            // Header
             HStack {
-                Button(action: onBack) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .medium))
-                        Text("Back")
-                            .font(.system(size: 17))
-                    }
-                    .foregroundColor(.white.opacity(0.6))
+                Button("back") {
+                    HapticFeedbackManager.shared.lightImpact()
+                    onBack()
                 }
+                .font(.system(size: 11, weight: .light, design: .monospaced))
+                .foregroundColor(.white.opacity(0.4))
+                .tracking(1.0)
                 
                 Spacer()
                 
-                Button("Create") {
-                    HapticFeedbackManager.shared.buttonTap()
+                Text("add songs")
+                    .font(.system(size: 11, weight: .light, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .tracking(1.0)
+                
+                Spacer()
+                
+                Button("create") {
+                    HapticFeedbackManager.shared.lightImpact()
                     onCreate()
                 }
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(canCreate ? .white : .white.opacity(0.3))
-                .disabled(!canCreate || isProcessing)
+                .font(.system(size: 11, weight: .light, design: .monospaced))
+                .foregroundColor(songs.isEmpty ? .white.opacity(0.3) : .white.opacity(0.8))
+                .tracking(1.0)
+                .disabled(songs.isEmpty || isProcessing)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 8)
+            .padding(.top, 20)
+            .padding(.bottom, 32)
             
+            // Content
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 32) {
-                    // Enhanced Title with Year
-                    VStack(spacing: 8) {
-                        Text("Add Songs")
-                            .font(.system(size: 34, weight: .bold))
-                            .foregroundColor(.white)
+                    // Album Preview
+                    VStack(spacing: 16) {
+                        if let coverImage = selectedCoverImage {
+                            Image(uiImage: coverImage)
+                                .resizable()
+                                .aspectRatio(1, contentMode: .fill)
+                                .frame(width: 120, height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(.white.opacity(0.02))
+                                .frame(width: 120, height: 120)
+                                .overlay(
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 32, weight: .ultraLight))
+                                        .foregroundColor(.white.opacity(0.2))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(.white.opacity(0.05), lineWidth: 0.5)
+                                )
+                        }
                         
-                        Text("to \(albumTitle) (\(albumYear))")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white.opacity(0.6))
-                        
-                        Text("\(songs.count) song\(songs.count == 1 ? "" : "s") added")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.4))
+                        VStack(spacing: 8) {
+                            Text(albumTitle)
+                                .font(.system(size: 18, weight: .light))
+                                .foregroundColor(.white.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                            
+                            Text("\(albumYear)")
+                                .font(.system(size: 11, weight: .light, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.4))
+                                .tracking(0.5)
+                        }
                     }
-                    .padding(.top, 20)
+                    
+                    // Songs count
+                    Text("\(songs.count) song\(songs.count == 1 ? "" : "s") added")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.4))
+                        .padding(.top, 20)
                     
                     if songs.isEmpty {
                         // Empty State
@@ -554,9 +580,9 @@ struct MinimalSongSelectionStep: View {
                     // Processing Indicator
                     if isProcessing {
                         MinimalProcessingIndicator(
-                            status: supabaseManager.currentUploadStatus.isEmpty ? processingStatus : supabaseManager.currentUploadStatus,
-                            progress: supabaseManager.uploadProgress
+                            status: supabaseManager.currentUploadStatus.isEmpty ? processingStatus : supabaseManager.currentUploadStatus
                         )
+                        .padding(.top, 20)
                     }
                     
                     Spacer(minLength: 100)
@@ -565,72 +591,58 @@ struct MinimalSongSelectionStep: View {
             }
         }
         .sheet(isPresented: $showingAudioPicker) {
-            AudioFilePicker { audioFile in
-                processAudioFile(audioFile)
+            AudioFilePicker { url in
+                processAudioFile(url)
             }
         }
     }
     
-    private var canCreate: Bool {
-        !songs.isEmpty && !isProcessing
-    }
-    
     private func processAudioFile(_ url: URL) {
-        isProcessing = true
-        processingStatus = "Analyzing audio file..."
+        HapticFeedbackManager.shared.lightImpact()
         
         Task {
+            await MainActor.run {
+                isProcessing = true
+                processingStatus = "Processing audio file..."
+            }
+            
             do {
-                await MainActor.run {
-                    processingStatus = "Analyzing audio properties..."
-                }
-                
-                let tempDirectory = FileManager.default.temporaryDirectory
-                let tempFileName = "\(UUID().uuidString).\(url.pathExtension)"
-                let tempURL = tempDirectory.appendingPathComponent(tempFileName)
-                
-                let hasAccess = url.startAccessingSecurityScopedResource()
-                defer {
-                    if hasAccess {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
-                
-                try FileManager.default.copyItem(at: url, to: tempURL)
-                
-                let asset = AVURLAsset(url: tempURL)
+                let asset = AVURLAsset(url: url)
                 let duration = try await asset.load(.duration)
-                let durationInSeconds = CMTimeGetSeconds(duration)
+                let durationSeconds = CMTimeGetSeconds(duration)
                 
-                let filename = url.deletingPathExtension().lastPathComponent
-                let fileExtension = url.pathExtension
+                let filename = url.lastPathComponent
                 let songId = UUID().uuidString
-                let uniqueFilename = "\(songId).\(fileExtension)"
-                
-                await MainActor.run {
-                    processingStatus = "Uploading to cloud..."
-                }
-                
-                _ = try await SupabaseAudioManager.shared.uploadAudioFile(
-                    tempURL,
-                    filename: uniqueFilename,
-                    songId: songId
-                )
                 
                 let audioFile = AudioFile(
                     id: UUID(),
                     songId: songId,
-                    url: tempURL,
+                    url: url,
                     originalFilename: filename,
-                    songTitle: filename,
-                    duration: durationInSeconds,
+                    songTitle: String(filename.prefix(while: { $0 != "." })),
+                    duration: durationSeconds,
                     isExplicit: false,
-                    supabaseFilename: uniqueFilename
+                    supabaseFilename: nil
                 )
                 
                 await MainActor.run {
-                    HapticFeedbackManager.shared.uploadComplete()
                     songs.append(audioFile)
+                    processingStatus = "Uploading to cloud..."
+                }
+                
+                // Upload to Supabase
+                let supabaseFilename = try await supabaseManager.uploadAudioFile(
+                    url,
+                    filename: filename,
+                    songId: songId
+                )
+                
+                await MainActor.run {
+                    if let index = songs.firstIndex(where: { $0.songId == songId }) {
+                        songs[index].supabaseFilename = supabaseFilename
+                    }
+                    
+                    HapticFeedbackManager.shared.success()
                     processingStatus = "Upload complete!"
                     
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -639,7 +651,7 @@ struct MinimalSongSelectionStep: View {
                     }
                 }
                 
-                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManager.default.removeItem(at: url)
                 
             } catch {
                 await MainActor.run {
@@ -665,70 +677,39 @@ struct MinimalSongSelectionStep: View {
     }
 }
 
-// MARK: - Supporting Components (unchanged)
+// MARK: - Supporting Components
 struct MinimalCoverImageSelector: View {
     @Binding var selectedImage: UIImage?
-    @Binding var showingImagePicker: Bool
     
     var body: some View {
-        Button(action: {
-            HapticFeedbackManager.shared.lightImpact()
-            showingImagePicker = true
-        }) {
+        VStack(spacing: 16) {
             if let image = selectedImage {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 160, height: 160)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                    )
+                    .frame(width: 140, height: 140)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.white.opacity(0.03))
-                    .frame(width: 160, height: 160)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.white.opacity(0.02))
+                    .frame(width: 140, height: 140)
                     .overlay(
                         VStack(spacing: 8) {
-                            Image(systemName: "plus")
+                            Image(systemName: "camera")
                                 .font(.system(size: 24, weight: .ultraLight))
-                                .foregroundColor(.white.opacity(0.4))
+                                .foregroundColor(.white.opacity(0.3))
                             
-                            Text("Add Cover")
-                                .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.4))
+                            Text("add cover")
+                                .font(.system(size: 10, weight: .light, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.3))
+                                .tracking(1.0)
                         }
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.white.opacity(0.05), lineWidth: 1)
                     )
             }
-        }
-        .buttonStyle(MinimalButtonStyle())
-    }
-}
-
-struct MinimalTextField: View {
-    @Binding var text: String
-    let placeholder: String
-    let isActive: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField(placeholder, text: $text)
-                .font(.system(size: 17))
-                .foregroundColor(.white)
-                .textFieldStyle(PlainTextFieldStyle())
-                .onChange(of: text) { _, _ in
-                    HapticFeedbackManager.shared.lightImpact()
-                }
-            
-            Rectangle()
-                .fill(isActive ? .white : .white.opacity(0.2))
-                .frame(height: 0.5)
-                .animation(.easeInOut(duration: 0.2), value: isActive)
         }
     }
 }
@@ -740,19 +721,21 @@ struct MinimalAddButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
-                Text("Add Audio File")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
+                
+                Text("add song")
+                    .font(.system(size: 11, weight: .light, design: .monospaced))
+                    .tracking(1.0)
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
+            .foregroundColor(.white.opacity(0.6))
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.white.opacity(0.05))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
                     )
             )
         }
@@ -767,70 +750,99 @@ struct MinimalAudioFileRow: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                Circle()
-                    .fill(.white.opacity(0.1))
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white.opacity(0.6))
-                    )
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(status)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(audioFile.originalFilename)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white)
+                        .lineLimit(1)
                     
-                    if progress > 0 {
-                        Text("\(Int(progress * 100))% complete")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
+                    Text(formatDuration(audioFile.duration))
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.5))
                 }
                 
                 Spacer()
+                
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.4))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(MinimalButtonStyle())
             }
             
-            if progress > 0 {
-                GeometryReader { geometry in
-                    RoundedRectangle(cornerRadius: 1)
+            TextField("Song title", text: $audioFile.songTitle)
+                .font(.system(size: 16))
+                .foregroundColor(.white.opacity(0.8))
+                .textFieldStyle(PlainTextFieldStyle())
+                .padding(.bottom, 8)
+                .overlay(
+                    Rectangle()
                         .fill(.white.opacity(0.1))
-                        .frame(height: 2)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(.white)
-                                .frame(width: geometry.size.width * progress, height: 2)
-                                .animation(.smooth(duration: 0.3), value: progress),
-                            alignment: .leading
-                        )
-                }
-                .frame(height: 2)
-            }
+                        .frame(height: 0.5),
+                    alignment: .bottom
+                )
         }
-        .padding(20)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(.white.opacity(0.02))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.white.opacity(0.05), lineWidth: 0.5)
+                )
+        )
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+struct MinimalProcessingIndicator: View {
+    let status: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(0.8)
+                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.6)))
+            
+            Text(status)
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.6))
+        }
+        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
                         .stroke(.white.opacity(0.1), lineWidth: 0.5)
                 )
         )
     }
 }
 
-// MARK: - Audio File Picker
 struct AudioFilePicker: UIViewControllerRepresentable {
     let onAudioSelected: (URL) -> Void
-    @Environment(\.dismiss) private var dismiss
     
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [
-            .audio, .mp3, .mpeg4Audio, .wav, .aiff
+            UTType.audio,
+            UTType.mp3,
+            UTType("public.mp3")!,
+            UTType("public.mpeg-4-audio")!,
+            UTType.wav,
+            UTType.aiff
         ])
+        
         picker.delegate = context.coordinator
         picker.allowsMultipleSelection = false
-        picker.shouldShowFileExtensions = true
         return picker
     }
     
@@ -864,82 +876,4 @@ struct AudioFilePicker: UIViewControllerRepresentable {
         onAlbumCreated: { _ in },
         onDismiss: { }
     )
-}, spacing: 4) {
-                    Text(audioFile.originalFilename)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    
-                    Text(formatDuration(audioFile.duration))
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                
-                Spacer()
-                
-                Button(action: onDelete) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(MinimalButtonStyle())
-            }
-            
-            TextField("Song title", text: $audioFile.songTitle)
-                .font(.system(size: 16))
-                .foregroundColor(.white.opacity(0.8))
-                .textFieldStyle(PlainTextFieldStyle())
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.white.opacity(0.04))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                        )
-                )
-                .onChange(of: audioFile.songTitle) { _, _ in
-                    HapticFeedbackManager.shared.lightImpact()
-                }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.white.opacity(0.02))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(.white.opacity(0.1), lineWidth: 0.5)
-                )
-        )
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
 }
-
-struct MinimalProcessingIndicator: View {
-    let status: String
-    let progress: Double
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .stroke(.white.opacity(0.1), lineWidth: 2)
-                        .frame(width: 24, height: 24)
-                    
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(.white, lineWidth: 2)
-                        .frame(width: 24, height: 24)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.smooth(duration: 0.3), value: progress)
-                }
-                
-                VStack(alignment: .leading

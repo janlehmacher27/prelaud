@@ -5,7 +5,6 @@
 //  Created by Jan Lehmacher on 16.07.25.
 //
 
-
 //
 //  AlbumEditView.swift
 //  prelaud
@@ -223,16 +222,16 @@ struct AlbumEditView: View {
                         }
                     
                     Rectangle()
-                        .fill(isTitleFocused ? .white.opacity(0.3) : .white.opacity(0.08))
+                        .fill(isTitleFocused ? .white.opacity(0.2) : .white.opacity(0.1))
                         .frame(height: 0.5)
                         .animation(.easeInOut(duration: 0.2), value: isTitleFocused)
                 }
             }
             
-            // Release year
+            // Album year
             VStack(spacing: 16) {
                 HStack {
-                    Text("year")
+                    Text("release year")
                         .font(.system(size: 11, weight: .light, design: .monospaced))
                         .foregroundColor(.white.opacity(0.4))
                         .tracking(1.0)
@@ -251,8 +250,8 @@ struct AlbumEditView: View {
                         
                         Spacer()
                         
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 12))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.3))
                     }
                     .padding(.vertical, 8)
@@ -265,94 +264,12 @@ struct AlbumEditView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            
-            // Album info (read-only)
-            VStack(spacing: 16) {
-                HStack {
-                    Text("info")
-                        .font(.system(size: 11, weight: .light, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.4))
-                        .tracking(1.0)
-                    
-                    Spacer()
-                }
-                
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("Artist")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.5))
-                        
-                        Spacer()
-                        
-                        Text(album.artist)
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    
-                    HStack {
-                        Text("Songs")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.5))
-                        
-                        Spacer()
-                        
-                        Text("\(album.songs.count)")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    
-                    HStack {
-                        Text("Created")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.5))
-                        
-                        Spacer()
-                        
-                        Text(formatDate(album.releaseDate))
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                }
-            }
         }
     }
     
     // MARK: - Actions Section
     private var actionsSection: some View {
         VStack(spacing: 20) {
-            // Save button
-            Button(action: saveAlbum) {
-                HStack(spacing: 8) {
-                    if isSaving {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .black.opacity(0.8)))
-                            .scaleEffect(0.7)
-                    } else {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .light))
-                    }
-                    
-                    Text(isSaving ? "saving changes" : "save changes")
-                        .font(.system(size: 11, weight: .light, design: .monospaced))
-                        .tracking(1.0)
-                }
-                .foregroundColor(.black.opacity(0.8))
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(hasChanges ? .white.opacity(0.9) : .white.opacity(0.1))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(.white.opacity(hasChanges ? 0 : 0.05), lineWidth: 0.5)
-                        )
-                )
-            }
-            .disabled(!hasChanges || isSaving)
-            .animation(.easeInOut(duration: 0.2), value: hasChanges)
-            .animation(.easeInOut(duration: 0.2), value: isSaving)
-            
             // Delete button
             Button(action: {
                 HapticFeedbackManager.shared.lightImpact()
@@ -378,6 +295,7 @@ struct AlbumEditView: View {
                         )
                 )
             }
+            .buttonStyle(PlainButtonStyle())
             .disabled(isSaving)
         }
     }

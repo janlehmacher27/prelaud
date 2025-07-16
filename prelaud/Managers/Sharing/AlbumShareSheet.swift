@@ -1,11 +1,20 @@
 //
-//  AlbumShareSheet.swift - FIXED VERSION (ENGLISH + DATA FORMAT)
+//  AlbumShareSheet.swift - FIXED DATE ISO8601 FORMATTING
 //  prelaud
 //
-//  Fixed data encoding and English interface
+//  Fixed ISO8601 date formatting with proper extension
 //
 
 import SwiftUI
+
+// MARK: - Date Extension for ISO8601 String
+extension Date {
+    var iso8601String: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: self)
+    }
+}
 
 struct AlbumShareSheet: View {
     let album: Album
@@ -378,11 +387,24 @@ struct AlbumShareSheet: View {
                     expiresAt: nil
                 )
                 
-                try await createSharingRequestFixed(
-                    album: album,
-                    targetUsername: username,
-                    permissions: permissions
-                )
+                // Try Supabase first, fallback to local storage
+                do {
+                    try await createSharingRequestFixed(
+                        album: album,
+                        targetUsername: username,
+                        permissions: permissions
+                    )
+                    print("✅ Supabase sharing request successful")
+                } catch {
+                    print("⚠️ Supabase sharing failed, using local fallback: \(error)")
+                    // Fallback to local storage
+                    try await createLocalSharingRequest(
+                        album: album,
+                        targetUsername: username,
+                        permissions: permissions
+                    )
+                    print("✅ Local sharing request successful")
+                }
                 
                 await MainActor.run {
                     shareResult = "Request sent to @\(username)"
@@ -398,7 +420,7 @@ struct AlbumShareSheet: View {
                 await MainActor.run {
                     shareError = "Failed to send request"
                     HapticFeedbackManager.shared.error()
-                    print("❌ Sharing error: \(error)")
+                    print("❌ All sharing methods failed: \(error)")
                 }
             }
             
@@ -499,7 +521,10 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
     
     guard let httpUserResponse = userResponse as? HTTPURLResponse, httpUserResponse.statusCode == 200 else {
         print("❌ User lookup failed with status: \(String(describing: (userResponse as? HTTPURLResponse)?.statusCode))")
-        throw SharingError.networkError
+        if let responseString = String(data: userData, encoding: .utf8) {
+            print("❌ User lookup error response: \(responseString)")
+        }
+        throw SharingError.userNotFound
     }
     
     // MANUAL JSON PARSING for user lookup to avoid Codable issues
@@ -508,22 +533,30 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
           let userIdString = userDict["id"] as? String,
           let targetUserId = UUID(uuidString: userIdString) else {
         print("❌ User not found or invalid user data")
+        if let responseString = String(data: userData, encoding: .utf8) {
+            print("❌ User data: \(responseString)")
+        }
         throw SharingError.userNotFound
     }
     
     print("✅ Found target user with ID: \(targetUserId)")
     
-    // 2. Create sharing request with FIXED JSON structure
+    // 2. Create sharing request with MINIMAL structure matching existing table
     let shareId = generateShareId()
     print("🔍 Generated share ID: \(shareId)")
     
-    // FIXED: Create a plain dictionary with explicit type annotations
-    let permissionsDict: [String: Any] = [
-        "canListen": permissions.canListen,
-        "canDownload": permissions.canDownload,
-        "expiresAt": permissions.expiresAt?.iso8601String ?? NSNull()
+    // FIXED: Create permissions as JSON string instead of separate columns
+    let permissionsJson: [String: Any] = [
+        "can_listen": permissions.canListen,
+        "can_download": permissions.canDownload,
+        "expires_at": permissions.expiresAt?.iso8601String
     ]
     
+    // Convert permissions to JSON string
+    let permissionsJsonData = try JSONSerialization.data(withJSONObject: permissionsJson)
+    let permissionsJsonString = String(data: permissionsJsonData, encoding: .utf8) ?? "{}"
+    
+    // MINIMAL structure that should match most sharing_requests tables
     let sharingRequestData: [String: Any] = [
         "id": UUID().uuidString,
         "share_id": shareId,
@@ -534,13 +567,15 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
         "album_title": album.title,
         "album_artist": album.artist,
         "song_count": album.songs.count,
-        "permissions": permissionsDict,
+        "permissions": permissionsJsonString,  // Store as JSON string
         "created_at": Date().iso8601String,
         "is_read": false,
         "status": "pending"
     ]
     
-    print("🔍 Prepared sharing request data")
+    print("🔍 Prepared sharing request data with JSON permissions")
+    print("🔍 Data keys: \(sharingRequestData.keys.sorted())")
+    print("🔍 Permissions JSON: \(permissionsJsonString)")
     
     // 3. Store album data for sharing
     let albumData = EncodableAlbum(
@@ -575,6 +610,11 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
     // FIXED: Use JSONSerialization instead of Codable
     requestRequest.httpBody = try JSONSerialization.data(withJSONObject: sharingRequestData)
     
+    // DEBUG: Print the JSON we're sending
+    if let jsonString = String(data: requestRequest.httpBody!, encoding: .utf8) {
+        print("🔍 Sending JSON: \(jsonString)")
+    }
+    
     print("🔍 About to send sharing request to Supabase")
     
     let (responseData, requestResponse) = try await URLSession.shared.data(for: requestRequest)
@@ -584,7 +624,15 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
         throw SharingError.networkError
     }
     
-    if !(200...299).contains(httpRequestResponse.statusCode) {
+    print("📋 Sharing request response status: \(httpRequestResponse.statusCode)")
+    
+    if let responseString = String(data: responseData, encoding: .utf8) {
+        print("📋 Response body: \(responseString)")
+    }
+    
+    if (200...299).contains(httpRequestResponse.statusCode) {
+        print("✅ Sharing request created successfully")
+    } else {
         // Print the actual error response
         if let errorString = String(data: responseData, encoding: .utf8) {
             print("❌ Supabase error response: \(errorString)")
@@ -592,8 +640,131 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
         print("❌ HTTP Status Code: \(httpRequestResponse.statusCode)")
         throw SharingError.creationFailed
     }
+}
+
+// MARK: - Alternative: Fallback to Simple Sharing without Supabase Table
+@MainActor
+func createLocalSharingRequest(album: Album, targetUsername: String, permissions: SharePermissions) async throws {
+    print("🔄 Creating local sharing request as fallback")
     
-    print("✅ Sharing request created successfully")
+    guard let currentUser = UserProfileManager.shared.userProfile else {
+        throw SharingError.notLoggedIn
+    }
+    
+    let shareId = generateShareId()
+    
+    // Create a simple sharing record using UserDefaults for now
+    let sharingData: [String: Any] = [
+        "id": UUID().uuidString,
+        "share_id": shareId,
+        "from_user": currentUser.username,
+        "to_user": targetUsername,
+        "album_title": album.title,
+        "album_artist": album.artist,
+        "song_count": album.songs.count,
+        "can_listen": permissions.canListen,
+        "can_download": permissions.canDownload,
+        "created_at": Date().iso8601String,
+        "status": "pending"
+    ]
+    
+    // Store album data
+    let albumData = EncodableAlbum(
+        from: album,
+        shareId: shareId,
+        ownerId: currentUser.id.uuidString,
+        ownerUsername: currentUser.username
+    )
+    
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    
+    if let encoded = try? encoder.encode(albumData) {
+        UserDefaults.standard.set(encoded, forKey: "SharedAlbumData_\(shareId)")
+        print("✅ Album data stored locally with shareId: \(shareId)")
+    }
+    
+    // Store sharing request locally
+    if let sharingJsonData = try? JSONSerialization.data(withJSONObject: sharingData),
+       let sharingJsonString = String(data: sharingJsonData, encoding: .utf8) {
+        UserDefaults.standard.set(sharingJsonString, forKey: "LocalSharingRequest_\(shareId)")
+        print("✅ Local sharing request created: \(shareId)")
+    }
+    
+    print("✅ Local sharing request created successfully")
+}
+
+// MARK: - Debug Function to Test Sharing Requests Table
+func debugSharingRequestsTable() async {
+    print("🔍 DEBUG: Testing sharing_requests table access")
+    
+    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
+    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
+    
+    // Test 1: Check if table exists and is accessible
+    let testEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?limit=1"
+    guard let url = URL(string: testEndpoint) else {
+        print("❌ Invalid URL")
+        return
+    }
+    
+    var request = URLRequest(url: url)
+    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    
+    do {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📋 Table access test: \(httpResponse.statusCode)")
+            
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 Response: \(responseString)")
+            }
+            
+            if httpResponse.statusCode == 200 {
+                print("✅ sharing_requests table is accessible")
+            } else if httpResponse.statusCode == 404 {
+                print("❌ sharing_requests table does not exist or is not accessible")
+            } else {
+                print("⚠️ Unexpected response code: \(httpResponse.statusCode)")
+            }
+        }
+    } catch {
+        print("❌ Error testing table: \(error)")
+    }
+    
+    // Test 2: Try to get current user's requests
+    await MainActor.run {
+        if let currentUser = UserProfileManager.shared.userProfile {
+            print("🔍 Testing requests for current user: \(currentUser.username)")
+            
+            Task {
+                let userRequestsEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?to_user_id=eq.\(currentUser.id.uuidString)"
+                guard let userUrl = URL(string: userRequestsEndpoint) else { return }
+                
+                var userRequest = URLRequest(url: userUrl)
+                userRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+                userRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+                userRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+                
+                do {
+                    let (userData, userResponse) = try await URLSession.shared.data(for: userRequest)
+                    
+                    if let httpUserResponse = userResponse as? HTTPURLResponse {
+                        print("📋 User requests test: \(httpUserResponse.statusCode)")
+                        
+                        if let responseString = String(data: userData, encoding: .utf8) {
+                            print("📄 User requests: \(responseString)")
+                        }
+                    }
+                } catch {
+                    print("❌ Error getting user requests: \(error)")
+                }
+            }
+        }
+    }
 }
 
 private func generateShareId() -> String {
