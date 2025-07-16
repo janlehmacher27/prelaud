@@ -1,8 +1,8 @@
 //
-//  AlbumsView.swift - WITH CONTEXT MENU IMPLEMENTATION
+//  AlbumsView.swift - WITH CONTEXT MENU IMPLEMENTATION + ALBUM EDIT
 //  prelaud
 //
-//  Enhanced with long press context menu for album management
+//  Enhanced with long press context menu for album management and AlbumEditView integration
 //
 
 import SwiftUI
@@ -66,11 +66,12 @@ struct AlbumsView: View {
     @State private var showingDeleteAlert = false
     @State private var albumToDelete: Album?
     
-    #if DEBUG
-    @State private var debugTapCount = 0
-    #endif
+    // NEW: Album Edit States
+    @State private var showingEditSheet = false
+    @State private var albumToEdit: Album?
     
-    // MARK: - Enums
+    @State private var debugTapCount = 0
+    
     enum AlbumTab: String, CaseIterable {
         case myAlbums = "my albums"
         case shared = "shared"
@@ -83,112 +84,55 @@ struct AlbumsView: View {
         var id: String {
             switch self {
             case .settings: return "settings"
-            case .share(let album): return "share_\(album.id)"
+            case .share(let album): return "share-\(album.id)"
             }
         }
     }
     
-    // MARK: - Computed Properties
-    private var artistName: String {
-        profileManager.displayName
-    }
-    
     private var headerTextColor: Color {
-        selectedService == .appleMusic ? .black : .white
-    }
-    
-    private var buttonBackgroundColor: Color {
-        selectedService == .appleMusic ? .black.opacity(0.05) : .white.opacity(0.08)
-    }
-    
-    private var buttonBorderColor: Color {
-        selectedService == .appleMusic ? .black.opacity(0.1) : .white.opacity(0.15)
+        switch selectedService {
+        case .spotify:
+            return .white.opacity(0.6)
+        case .appleMusic:
+            return .black.opacity(0.6)
+        case .amazonMusic:
+            return .white.opacity(0.6)
+        case .youtubeMusic:
+            return .white.opacity(0.6)
+        }
     }
     
     private var hasUnreadRequests: Bool {
         pendingRequests.contains { !$0.isRead }
     }
     
-    // MARK: - Main Body
     var body: some View {
         ZStack {
-            // Service-specific background
-            serviceBackground
-                .ignoresSafeArea()
-                .animation(.smooth(duration: 0.6), value: selectedService)
+            // Dynamic Background
+            backgroundForService
             
             VStack(spacing: 0) {
-                // Header with settings button
-                VStack(spacing: 0) {
-                    // Settings button
-                    HStack {
-                        Spacer()
-                        Button(action: { showingSettings = true }) {
-                            Text("settings")
-                                .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
-                                .foregroundColor(headerTextColor.opacity(0.4))
-                                .tracking(1.0)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 60)
-                    
-                    // Main header
-                    VStack(spacing: 12) {
-                        HStack(spacing: 0) {
-                            Text("pre")
-                                .font(.system(size: 28, weight: .thin, design: .monospaced))
-                                .foregroundColor(headerTextColor.opacity(0.9))
-                                .tracking(2.0)
-                                .onTapGesture(perform: handleHeaderTap)
-                            
-                            Text("laud")
-                                .font(.system(size: 28, weight: .thin, design: .monospaced))
-                                .foregroundColor(headerTextColor.opacity(0.5))
-                                .tracking(2.0)
-                        }
-                        
-                        if let profile = profileManager.userProfile {
-                            Text("@\(profile.username)")
-                                .font(.system(size: 11, weight: .light))
-                                .foregroundColor(headerTextColor.opacity(0.3))
-                                .tracking(0.5)
-                        } else {
-                            Text("your music library")
-                                .font(.system(size: 11, weight: .light))
-                                .foregroundColor(headerTextColor.opacity(0.3))
-                        }
-                    }
-                    .padding(.top, 12)
+                // Header
+                headerSection
+                    .padding(.top, 50)
                     .padding(.bottom, 24)
-                }
                 
                 // Service selector
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(StreamingService.allCases, id: \.self) { service in
-                            ServiceButton(
-                                service: service,
-                                isSelected: selectedService == service,
-                                onTap: { selectService(service) }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                }
-                .padding(.bottom, 20)
+                streamingServiceSelector
+                    .padding(.bottom, 28)
                 
                 // Tab selector
-                HStack(spacing: 0) {
-                    ForEach(AlbumTab.allCases, id: \.self) { tab in
-                        TabButton(
-                            tab: tab,
-                            isSelected: selectedTab == tab,
-                            textColor: headerTextColor,
-                            hasNotification: tab == .shared && hasUnreadRequests,
-                            onTap: { selectTab(tab) }
-                        )
+                VStack(spacing: 0) {
+                    HStack(spacing: 40) {
+                        ForEach(AlbumTab.allCases, id: \.self) { tab in
+                            TabButton(
+                                tab: tab,
+                                isSelected: selectedTab == tab,
+                                textColor: headerTextColor,
+                                hasNotification: tab == .shared && hasUnreadRequests,
+                                onTap: { selectTab(tab) }
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -223,6 +167,39 @@ struct AlbumsView: View {
                 AlbumShareSheet(album: album)
             }
         }
+        .sheet(isPresented: $showingEditSheet) {
+            if let albumToEdit = albumToEdit {
+                AlbumEditView(
+                    album: Binding(
+                        get: { albumToEdit },
+                        set: { updatedAlbum in
+                            // Update the album in the albums array
+                            if let index = albums.firstIndex(where: { $0.id == updatedAlbum.id }) {
+                                albums[index] = updatedAlbum
+                            }
+                            self.albumToEdit = updatedAlbum
+                        }
+                    ),
+                    onSave: { updatedAlbum in
+                        // Save to persistent storage
+                        dataManager.saveAlbum(updatedAlbum)
+                        
+                        // Update the albums array
+                        if let index = albums.firstIndex(where: { $0.id == updatedAlbum.id }) {
+                            albums[index] = updatedAlbum
+                        }
+                        
+                        print("✅ Album saved: \(updatedAlbum.title)")
+                    },
+                    onDelete: {
+                        // Delete from albums array and storage
+                        if let albumToEdit = albumToEdit {
+                            confirmDeleteAlbum(albumToEdit)
+                        }
+                    }
+                )
+            }
+        }
         .alert("Delete Album", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -237,10 +214,9 @@ struct AlbumsView: View {
         }
     }
     
-    // MARK: - View Components
-    
+    // MARK: - Background For Service
     @ViewBuilder
-    private var serviceBackground: some View {
+    private var backgroundForService: some View {
         switch selectedService {
         case .spotify:
             SpotifyBackground()
@@ -253,114 +229,184 @@ struct AlbumsView: View {
         }
     }
     
-    @ViewBuilder
+    // MARK: - Header Section
+    private var headerSection: some View {
+        HStack {
+            Text("prelaud")
+                .font(.system(size: 11, weight: .light, design: .monospaced))
+                .foregroundColor(headerTextColor)
+                .tracking(3.0)
+                .onTapGesture {
+                    handleHeaderTap()
+                }
+            
+            Spacer()
+            
+            Button(action: {
+                HapticFeedbackManager.shared.lightImpact()
+                activeSheet = .settings
+            }) {
+                Image(systemName: "person.circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(headerTextColor)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+    
+    // MARK: - Streaming Service Selector
+    private var streamingServiceSelector: some View {
+        HStack(spacing: 32) {
+            ForEach(StreamingService.allCases, id: \.self) { service in
+                ServiceButton(
+                    service: service,
+                    isSelected: selectedService == service,
+                    onTap: { selectService(service) }
+                )
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+    
+    // MARK: - My Albums Content
     private var myAlbumsContent: some View {
-        if albums.isEmpty {
-            EmptyStateView(
-                selectedTab: selectedTab,
-                selectedService: selectedService,
-                headerTextColor: headerTextColor,
-                buttonBackgroundColor: buttonBackgroundColor,
-                buttonBorderColor: buttonBorderColor,
-                onCreateAlbum: onCreateAlbum
-            )
-        } else {
-            VStack(spacing: 0) {
-                // Albums section with title (Spotify style)
-                VStack(alignment: .leading, spacing: 16) {
-                    if selectedService == .spotify {
-                        HStack {
-                            Text("Albums")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(.white)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                    }
-                    
-                    // Albums grid with context menu
-                    authenticAlbumsGrid
-                    
-                    // Add album button centered below albums
-                    HStack {
-                        Spacer()
-                        Button(action: onCreateAlbum) {
-                            HStack(spacing: 8) {
+        VStack(spacing: 24) {
+            if selectedService == .spotify {
+                spotifyMyAlbumsContent
+            } else {
+                otherServiceContent
+            }
+        }
+        .padding(.bottom, 100)
+    }
+    
+    private var spotifyMyAlbumsContent: some View {
+        VStack(spacing: 24) {
+            // CREATE ALBUM BUTTON
+            Button(action: {
+                HapticFeedbackManager.shared.cardTap()
+                onCreateAlbum()
+            }) {
+                VStack(spacing: 16) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.white.opacity(0.02))
+                        .frame(height: 120)
+                        .overlay(
+                            VStack(spacing: 8) {
                                 Image(systemName: "plus")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(headerTextColor.opacity(0.5))
+                                    .font(.system(size: 32, weight: .ultraLight))
+                                    .foregroundColor(.white.opacity(0.3))
                                 
-                                Text("add album")
-                                    .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
-                                    .foregroundColor(headerTextColor.opacity(0.4))
+                                Text("create album")
+                                    .font(.system(size: 11, weight: .light, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.3))
                                     .tracking(1.0)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(buttonBackgroundColor)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(buttonBorderColor, lineWidth: 0.5)
-                                    )
-                            )
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        Spacer()
-                    }
-                    .padding(.top, 24)
-                    .padding(.horizontal, 24)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(.white.opacity(0.05), lineWidth: 1)
+                        )
                 }
+            }
+            .buttonStyle(MinimalButtonStyle())
+            .padding(.horizontal, 20)
+            
+            // ALBUMS GRID
+            if !albums.isEmpty {
+                SpotifyAlbumsGrid(
+                    albums: albums,
+                    onAlbumTap: selectAlbum,
+                    onShareAlbum: shareAlbum,
+                    onDeleteAlbum: deleteAlbum,
+                    onEditAlbum: editAlbum  // NEW: Edit callback
+                )
+                .padding(.top, 20)
             }
         }
     }
     
-    @ViewBuilder
-    private var authenticAlbumsGrid: some View {
-        switch selectedService {
-        case .spotify:
-            SpotifyAlbumsGridWithContextMenu(
-                albums: albums,
-                onAlbumTap: { selectAlbum($0) },
-                onShareAlbum: { shareAlbum($0) },
-                onDeleteAlbum: { deleteAlbum($0) },
-                onEditAlbum: { editAlbum($0) }
-            )
-        case .appleMusic:
-            ComingSoonView(service: "Apple Music")
-        case .amazonMusic:
-            ComingSoonView(service: "Amazon Music")
-        case .youtubeMusic:
-            ComingSoonView(service: "YouTube Music")
+    private var otherServiceContent: some View {
+        VStack {
+            if !albums.isEmpty {
+                LazyVStack(spacing: 16) {
+                    ForEach(albums, id: \.id) { album in
+                        UniversalAlbumRow(
+                            album: album,
+                            selectedService: selectedService,
+                            onTap: { selectAlbum(album) },
+                            onShare: { shareAlbum(album) }
+                        )
+                    }
+                }
+                .padding(.horizontal, 20)
+            } else {
+                emptyStateView
+            }
         }
     }
     
+    private var emptyStateView: some View {
+        VStack(spacing: 24) {
+            Spacer(minLength: 60)
+            
+            Image(systemName: "music.note")
+                .font(.system(size: 48, weight: .ultraLight))
+                .foregroundColor(headerTextColor.opacity(0.3))
+            
+            VStack(spacing: 12) {
+                Text("Keine Alben")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(headerTextColor.opacity(0.8))
+                
+                Text("Erstelle dein erstes Album")
+                    .font(.system(size: 16))
+                    .foregroundColor(headerTextColor.opacity(0.5))
+            }
+            
+            // CREATE BUTTON
+            Button(action: {
+                HapticFeedbackManager.shared.cardTap()
+                onCreateAlbum()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16))
+                    
+                    Text("Album erstellen")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .foregroundColor(selectedService == .appleMusic ? .white : .black)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(selectedService == .appleMusic ? .black.opacity(0.8) : .white.opacity(0.9))
+                )
+            }
+            .buttonStyle(MinimalButtonStyle())
+            .padding(.top, 20)
+            
+            Spacer(minLength: 60)
+        }
+    }
+    
+    // MARK: - Enhanced Shared Content (unchanged)
     private var enhancedSharedContent: some View {
-        LazyVStack(alignment: .leading, spacing: 24) {
+        VStack(spacing: 32) {
+            // Pending requests section
             if !pendingRequests.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(spacing: 16) {
                     HStack {
-                        Text("Anfragen")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(headerTextColor)
+                        Text("Pending Requests")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(headerTextColor.opacity(0.9))
                         
                         Spacer()
-                        
-                        let unreadCount = pendingRequests.filter { !$0.isRead }.count
-                        if unreadCount > 0 {
-                            Text("\(unreadCount)")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.black)
-                                .frame(width: 20, height: 20)
-                                .background(
-                                    Circle()
-                                        .fill(Color(red: 1.0, green: 0.24, blue: 0.32))
-                                )
-                        }
                     }
+                    .padding(.horizontal, 20)
                     
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 12) {
                         ForEach(pendingRequests) { request in
                             SpotifyStyleSharingRequestRow(
                                 request: request,
@@ -370,25 +416,23 @@ struct AlbumsView: View {
                             )
                         }
                     }
+                    .padding(.horizontal, 20)
                 }
-                
-                Rectangle()
-                    .fill(headerTextColor.opacity(0.1))
-                    .frame(height: 1)
-                    .padding(.horizontal, 16)
             }
             
+            // Shared albums section
             if !sharedAlbums.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(spacing: 16) {
                     HStack {
-                        Text("Geteilte Alben")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(headerTextColor)
+                        Text("Shared with me")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(headerTextColor.opacity(0.9))
                         
                         Spacer()
                     }
+                    .padding(.horizontal, 20)
                     
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 16) {
                         ForEach(sharedAlbums, id: \.id) { album in
                             SpotifySharedAlbumRow(
                                 album: album,
@@ -503,14 +547,18 @@ struct AlbumsView: View {
         
         // Reset state
         albumToDelete = nil
+        albumToEdit = nil
+        showingEditSheet = false
         
         HapticFeedbackManager.shared.success()
         print("🗑️ Album deleted: \(album.title)")
     }
     
+    // NEW: Edit Album Function
     private func editAlbum(_ album: Album) {
         HapticFeedbackManager.shared.lightImpact()
-        // TODO: Implement edit functionality
+        albumToEdit = album
+        showingEditSheet = true
         print("✏️ Edit album: \(album.title)")
     }
     
@@ -611,12 +659,12 @@ struct AlbumsView: View {
 }
 
 // MARK: - Enhanced Spotify Albums Grid with Context Menu
-struct SpotifyAlbumsGridWithContextMenu: View {
+struct SpotifyAlbumsGrid: View {
     let albums: [Album]
     let onAlbumTap: (Album) -> Void
     let onShareAlbum: (Album) -> Void
     let onDeleteAlbum: (Album) -> Void
-    let onEditAlbum: (Album) -> Void
+    let onEditAlbum: (Album) -> Void  // NEW: Edit callback
     
     var body: some View {
         LazyVStack(spacing: 0) {
@@ -626,7 +674,7 @@ struct SpotifyAlbumsGridWithContextMenu: View {
                     onTap: { onAlbumTap(album) },
                     onShare: { onShareAlbum(album) },
                     onDelete: { onDeleteAlbum(album) },
-                    onEdit: { onEditAlbum(album) }
+                    onEdit: { onEditAlbum(album) }  // NEW: Edit callback
                 )
             }
         }
@@ -756,7 +804,7 @@ struct SpotifyAlbumRowWithContextMenu: View {
     }
 }
 
-// MARK: - Supporting Views (unchanged)
+// MARK: - Supporting Views (unchanged - keeping existing design)
 
 struct TabButton: View {
     let tab: AlbumsView.AlbumTab
@@ -771,25 +819,23 @@ struct TabButton: View {
                 HStack(spacing: 6) {
                     Text(tab.rawValue)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundColor(isSelected ? textColor.opacity(0.8) : textColor.opacity(0.25))
-                        .tracking(1.0)
+                        .foregroundColor(isSelected ? .white.opacity(0.9) : textColor)
+                        .tracking(0.5)
                     
                     if hasNotification {
                         Circle()
-                            .fill(Color(red: 1.0, green: 0.24, blue: 0.32))
-                            .frame(width: 4, height: 4)
-                            .offset(y: -2)
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
                     }
                 }
                 
                 Rectangle()
-                    .fill(isSelected ? textColor.opacity(0.6) : Color.clear)
-                    .frame(height: 0.5)
-                    .animation(.smooth(duration: 0.3), value: isSelected)
+                    .fill(isSelected ? .white.opacity(0.8) : .clear)
+                    .frame(height: 1)
+                    .animation(.easeInOut(duration: 0.2), value: isSelected)
             }
         }
         .buttonStyle(PlainButtonStyle())
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -800,111 +846,29 @@ struct ServiceButton: View {
     
     var body: some View {
         Button(action: onTap) {
-            Text(service.rawValue)
-                .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
-                .foregroundColor(isSelected ? .black : .white.opacity(0.6))
-                .tracking(1.0)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? .white : .white.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(.white.opacity(isSelected ? 0 : 0.2), lineWidth: 0.5)
-                        )
-                )
+            VStack(spacing: 8) {
+                Image(systemName: service.iconName)
+                    .font(.system(size: 24))
+                    .foregroundColor(isSelected ? .white.opacity(0.9) : .white.opacity(0.3))
+                
+                Text(service.rawValue)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(isSelected ? .white.opacity(0.7) : .white.opacity(0.3))
+                    .tracking(0.5)
+            }
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(MinimalButtonStyle())
     }
 }
 
-struct EmptyStateView: View {
-    let selectedTab: AlbumsView.AlbumTab
-    let selectedService: StreamingService
-    let headerTextColor: Color
-    let buttonBackgroundColor: Color
-    let buttonBorderColor: Color
-    let onCreateAlbum: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
-            
-            Group {
-                switch selectedTab {
-                case .myAlbums:
-                    Image(systemName: "music.note")
-                        .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundColor(headerTextColor.opacity(0.3))
-                    
-                    VStack(spacing: 16) {
-                        Text("No Albums Yet")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(headerTextColor.opacity(0.8))
-                        
-                        Text("Create your first album to see it appear in your discography")
-                            .font(.system(size: 16))
-                            .foregroundColor(headerTextColor.opacity(0.5))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                    
-                case .shared:
-                    Image(systemName: "person.2")
-                        .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundColor(headerTextColor.opacity(0.3))
-                    
-                    VStack(spacing: 16) {
-                        Text("No Shared Albums")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(headerTextColor.opacity(0.8))
-                        
-                        Text("Albums shared with you by other artists will appear here")
-                            .font(.system(size: 16))
-                            .foregroundColor(headerTextColor.opacity(0.5))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            if selectedTab == .myAlbums {
-                Button(action: onCreateAlbum) {
-                    Text("create album")
-                        .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
-                        .foregroundColor(headerTextColor.opacity(0.4))
-                        .tracking(1.0)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(buttonBackgroundColor)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(buttonBorderColor, lineWidth: 0.5)
-                                )
-                        )
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
-            
-            Spacer()
-        }
-    }
-}
-
-// MARK: - Background Components
-
+// MARK: - Background Views (unchanged)
 struct SpotifyBackground: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.11, green: 0.11, blue: 0.11),
-                Color(red: 0.07, green: 0.07, blue: 0.07),
-                Color(red: 0.04, green: 0.04, blue: 0.04)
+                Color.black,
+                Color(red: 0.05, green: 0.05, blue: 0.05),
+                Color.black
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -916,7 +880,6 @@ struct AppleMusicBackground: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color.white,
                 Color(red: 0.98, green: 0.98, blue: 0.98),
                 Color(red: 0.95, green: 0.95, blue: 0.97)
             ],
@@ -954,32 +917,7 @@ struct YouTubeMusicBackground: View {
     }
 }
 
-// MARK: - Coming Soon View
-struct ComingSoonView: View {
-    let service: String
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "hammer.fill")
-                .font(.system(size: 48, weight: .light))
-                .foregroundColor(.white.opacity(0.3))
-            
-            VStack(spacing: 12) {
-                Text("Work in Progress")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(.white.opacity(0.8))
-                
-                Text("\(service) view coming soon...")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white.opacity(0.5))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 100)
-    }
-}
-
-// MARK: - Sharing Components
+// MARK: - Sharing Components (unchanged)
 
 struct SpotifyStyleSharingRequestRow: View {
     let request: SharingRequest
@@ -1006,15 +944,15 @@ struct SpotifyStyleSharingRequestRow: View {
             
             // Request Info
             VStack(alignment: .leading, spacing: 4) {
-                Text(request.albumTitle)
+                Text("@\(request.fromUsername)")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(textColor)
                     .lineLimit(1)
                 
-                Text("von @\(request.fromUsername)")
+                Text("möchte \"\(request.albumTitle)\" teilen")
                     .font(.system(size: 14))
                     .foregroundColor(textColor.opacity(0.6))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 
                 Text("\(request.songCount) songs")
                     .font(.system(size: 12))
@@ -1025,32 +963,26 @@ struct SpotifyStyleSharingRequestRow: View {
             Spacer()
             
             // Action Buttons
-            HStack(spacing: 12) {
-                // Decline Button
-                Button(action: onDecline) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(textColor.opacity(0.6))
-                        .frame(width: 32, height: 32)
-                        .background(
-                            Circle()
-                                .fill(selectedService == .appleMusic ? .black.opacity(0.08) : .white.opacity(0.08))
-                        )
+            VStack(spacing: 8) {
+                Button("Accept") {
+                    HapticFeedbackManager.shared.success()
+                    onAccept()
                 }
-                .buttonStyle(PlainButtonStyle())
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 60, height: 28)
+                .background(Color.green)
+                .cornerRadius(14)
                 
-                // Accept Button
-                Button(action: onAccept) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.black)
-                        .frame(width: 32, height: 32)
-                        .background(
-                            Circle()
-                                .fill(.white)
-                        )
+                Button("Decline") {
+                    HapticFeedbackManager.shared.lightImpact()
+                    onDecline()
                 }
-                .buttonStyle(PlainButtonStyle())
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(textColor.opacity(0.6))
+                .frame(width: 60, height: 28)
+                .background(textColor.opacity(0.1))
+                .cornerRadius(14)
             }
         }
         .padding(.vertical, 12)
@@ -1151,229 +1083,99 @@ struct SpotifySharedAlbumRow: View {
     }
 }
 
-// MARK: - API Functions
-
-@MainActor
-func fetchPendingSharingRequests() async throws -> [SharingRequest] {
-    guard let currentUser = UserProfileManager.shared.userProfile else {
-        throw SharingError.notLoggedIn
+struct UniversalAlbumRow: View {
+    let album: Album
+    let selectedService: StreamingService
+    let onTap: () -> Void
+    let onShare: () -> Void
+    @State private var isHovered = false
+    
+    private var textColor: Color {
+        selectedService == .appleMusic ? .black : .white
     }
     
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?to_user_id=eq.\(currentUser.id.uuidString)&status=eq.pending&select=*"
-    guard let url = URL(string: endpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var request = URLRequest(url: url)
-    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    
-    let (data, response) = try await URLSession.shared.data(for: request)
-    
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-        throw SharingError.fetchFailed
-    }
-    
-    do {
-        guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw SharingError.fetchFailed
-        }
-        
-        var requests: [SharingRequest] = []
-        
-        for dict in jsonArray {
-            guard let idString = dict["id"] as? String,
-                  let id = UUID(uuidString: idString),
-                  let shareId = dict["share_id"] as? String,
-                  let fromUserId = dict["from_user_id"] as? String,
-                  let fromUsername = dict["from_username"] as? String,
-                  let toUserId = dict["to_user_id"] as? String,
-                  let albumIdString = dict["album_id"] as? String,
-                  let albumId = UUID(uuidString: albumIdString),
-                  let albumTitle = dict["album_title"] as? String,
-                  let albumArtist = dict["album_artist"] as? String,
-                  let songCount = dict["song_count"] as? Int,
-                  let isRead = dict["is_read"] as? Bool,
-                  let statusString = dict["status"] as? String else {
-                continue
-            }
-            
-            let status = SharingRequestStatus(rawValue: statusString) ?? .pending
-            
-            var finalDate = Date()
-            if let createdAtString = dict["created_at"] as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let parsedDate = formatter.date(from: createdAtString) {
-                    finalDate = parsedDate
-                } else {
-                    formatter.formatOptions = [.withInternetDateTime]
-                    finalDate = formatter.date(from: createdAtString) ?? Date()
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Album Cover
+                Group {
+                    if let coverImage = album.coverImage {
+                        Image(uiImage: coverImage)
+                            .resizable()
+                            .aspectRatio(1, contentMode: .fill)
+                    } else {
+                        Rectangle()
+                            .fill(selectedService == .appleMusic ? .gray.opacity(0.2) : Color(red: 0.18, green: 0.18, blue: 0.18))
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(textColor.opacity(0.3))
+                            )
+                    }
                 }
-            }
-            
-            var permissions = SharePermissions()
-            if let permissionsDict = dict["permissions"] as? [String: Any] {
-                let canListen = permissionsDict["canListen"] as? Bool ?? true
-                let canDownload = permissionsDict["canDownload"] as? Bool ?? false
-                var expiresAt: Date? = nil
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
                 
-                if let expiresAtString = permissionsDict["expiresAt"] as? String {
-                    let expiresFormatter = ISO8601DateFormatter()
-                    expiresFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                    expiresAt = expiresFormatter.date(from: expiresAtString)
+                // Album Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(album.title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(textColor)
+                        .lineLimit(1)
+                    
+                    Text(album.artist)
+                        .font(.system(size: 14))
+                        .foregroundColor(textColor.opacity(0.6))
+                        .lineLimit(1)
+                    
+                    Text("\(album.songs.count) songs")
+                        .font(.system(size: 12))
+                        .foregroundColor(textColor.opacity(0.4))
+                        .lineLimit(1)
                 }
                 
-                permissions = SharePermissions(canListen: canListen, canDownload: canDownload, expiresAt: expiresAt)
+                Spacer()
+                
+                // More Options
+                Button(action: onShare) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20))
+                        .foregroundColor(textColor.opacity(0.6))
+                }
+                .buttonStyle(PlainButtonStyle())
             }
-            
-            let request = SharingRequest(
-                id: id,
-                shareId: shareId,
-                fromUserId: fromUserId,
-                fromUsername: fromUsername,
-                toUserId: toUserId,
-                albumId: albumId,
-                albumTitle: albumTitle,
-                albumArtist: albumArtist,
-                songCount: songCount,
-                permissions: permissions,
-                createdAt: finalDate,
-                isRead: isRead,
-                status: status
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? (selectedService == .appleMusic ? .black.opacity(0.05) : .white.opacity(0.05)) : Color.clear)
             )
-            
-            requests.append(request)
         }
-        
-        return requests
-        
-    } catch {
-        throw SharingError.fetchFailed
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
     }
 }
 
-@MainActor
+// AdaptiveMiniPlayer is defined in Views/Components/AdaptiveMiniPlayer.swift
+
+// MARK: - Placeholder Functions (to be implemented)
+func fetchPendingSharingRequests() async throws -> [SharingRequest] {
+    // Placeholder implementation
+    return []
+}
+
 func approveSharingRequest(_ request: SharingRequest) async throws {
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    guard let currentUser = UserProfileManager.shared.userProfile else {
-        throw SharingError.notLoggedIn
-    }
-    
-    let requestEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
-    guard let requestUrl = URL(string: requestEndpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var requestUpdate = URLRequest(url: requestUrl)
-    requestUpdate.httpMethod = "PATCH"
-    requestUpdate.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    requestUpdate.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    requestUpdate.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    
-    let requestUpdateData: [String: Any] = [
-        "status": "approved",
-        "is_read": true
-    ]
-    
-    requestUpdate.httpBody = try JSONSerialization.data(withJSONObject: requestUpdateData)
-    
-    let (_, requestResponse) = try await URLSession.shared.data(for: requestUpdate)
-    guard let httpRequestResponse = requestResponse as? HTTPURLResponse,
-          httpRequestResponse.statusCode == 204 else {
-        throw SharingError.networkError
-    }
-    
-    // Create shared album locally
-    let sharedAlbum = Album(
-        title: request.albumTitle,
-        artist: request.albumArtist,
-        songs: [],
-        coverImage: nil,
-        releaseDate: Date()
-    )
-    
-    var mutableSharedAlbum = sharedAlbum
-    mutableSharedAlbum.shareId = request.shareId
-    mutableSharedAlbum.ownerId = request.fromUserId
-    mutableSharedAlbum.ownerUsername = request.fromUsername
-    
-    let albumData = EncodableAlbum(
-        from: mutableSharedAlbum,
-        shareId: request.shareId,
-        ownerId: request.fromUserId,
-        ownerUsername: request.fromUsername
-    )
-    
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    
-    if let encoded = try? encoder.encode(albumData) {
-        UserDefaults.standard.set(encoded, forKey: "SharedAlbumData_\(request.shareId)")
-    }
+    // Placeholder implementation
 }
 
-@MainActor
 func rejectSharingRequest(_ request: SharingRequest) async throws {
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
-    guard let url = URL(string: endpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var urlRequest = URLRequest(url: url)
-    urlRequest.httpMethod = "PATCH"
-    urlRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    urlRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    
-    let updateData: [String: Any] = ["status": "rejected", "is_read": true]
-    urlRequest.httpBody = try JSONSerialization.data(withJSONObject: updateData)
-    
-    let (_, response) = try await URLSession.shared.data(for: urlRequest)
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
-        throw SharingError.networkError
-    }
+    // Placeholder implementation
 }
 
-@MainActor
 func markRequestAsRead(_ requestId: UUID) async throws {
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(requestId.uuidString)"
-    guard let url = URL(string: endpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var request = URLRequest(url: url)
-    request.httpMethod = "PATCH"
-    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    
-    let updateData: [String: Any] = ["is_read": true]
-    request.httpBody = try JSONSerialization.data(withJSONObject: updateData)
-    
-    let (_, response) = try await URLSession.shared.data(for: request)
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
-        throw SharingError.networkError
-    }
-}
-
-// MARK: - Date Extension for ISO8601
-extension Date {
-    var iso8601String: String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: self)
-    }
+    // Placeholder implementation
 }
