@@ -1435,19 +1435,23 @@ func fetchPendingSharingRequests() async throws -> [SharingRequest] {
     }
 }
 
-// FIXED: Corrected approveSharingRequest function
+// FIXED: Corrected approveSharingRequest function with better error handling
 @MainActor
 func approveSharingRequest(_ request: SharingRequest) async throws {
     let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
     let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
     
     guard let currentUser = UserProfileManager.shared.userProfile else {
+        print("❌ No current user found")
         throw SharingError.notLoggedIn
     }
+    
+    print("🔍 Starting approval for request: \(request.id)")
     
     // SCHRITT 1: Request als approved markieren
     let requestEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
     guard let requestUrl = URL(string: requestEndpoint) else {
+        print("❌ Invalid request URL: \(requestEndpoint)")
         throw SharingError.invalidRequest
     }
     
@@ -1459,20 +1463,39 @@ func approveSharingRequest(_ request: SharingRequest) async throws {
     
     let requestUpdateData: [String: Any] = [
         "status": "approved",
-        "is_read": true,
-        "approved_at": Date().iso8601String
+        "is_read": true
+        // REMOVED: "approved_at": Date().iso8601String - Column doesn't exist in DB
     ]
-    requestUpdate.httpBody = try JSONSerialization.data(withJSONObject: requestUpdateData)
     
-    let (_, requestResponse) = try await URLSession.shared.data(for: requestUpdate)
-    guard let httpRequestResponse = requestResponse as? HTTPURLResponse,
-          httpRequestResponse.statusCode == 204 else {
+    do {
+        requestUpdate.httpBody = try JSONSerialization.data(withJSONObject: requestUpdateData)
+    } catch {
+        print("❌ Failed to serialize request update data: \(error)")
+        throw SharingError.networkError
+    }
+    
+    print("🔍 Sending PATCH request to update sharing request status...")
+    
+    let (requestResponseData, requestResponse) = try await URLSession.shared.data(for: requestUpdate)
+    
+    guard let httpRequestResponse = requestResponse as? HTTPURLResponse else {
+        print("❌ Invalid response type for request update")
+        throw SharingError.networkError
+    }
+    
+    print("🔍 Request update response status: \(httpRequestResponse.statusCode)")
+    
+    if httpRequestResponse.statusCode != 204 {
+        if let errorString = String(data: requestResponseData, encoding: .utf8) {
+            print("❌ Request update error response: \(errorString)")
+        }
+        print("❌ Expected status code 204, got \(httpRequestResponse.statusCode)")
         throw SharingError.networkError
     }
     
     print("✅ Request marked as approved")
     
-    // SCHRITT 2: SharedAlbum Eintrag erstellen (DAS WAR DER FEHLENDE TEIL!)
+    // SCHRITT 2: SharedAlbum Eintrag erstellen
     let sharedAlbumData: [String: Any] = [
         "id": UUID().uuidString,
         "album_id": request.albumId.uuidString,
@@ -1493,6 +1516,7 @@ func approveSharingRequest(_ request: SharingRequest) async throws {
     
     let sharedAlbumEndpoint = "\(supabaseURL)/rest/v1/shared_albums"
     guard let sharedAlbumUrl = URL(string: sharedAlbumEndpoint) else {
+        print("❌ Invalid shared album URL: \(sharedAlbumEndpoint)")
         throw SharingError.invalidRequest
     }
     
@@ -1503,11 +1527,29 @@ func approveSharingRequest(_ request: SharingRequest) async throws {
     sharedAlbumRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
     sharedAlbumRequest.setValue("return=representation", forHTTPHeaderField: "Prefer")
     
-    sharedAlbumRequest.httpBody = try JSONSerialization.data(withJSONObject: sharedAlbumData)
+    do {
+        sharedAlbumRequest.httpBody = try JSONSerialization.data(withJSONObject: sharedAlbumData)
+    } catch {
+        print("❌ Failed to serialize shared album data: \(error)")
+        throw SharingError.networkError
+    }
     
-    let (_, sharedAlbumResponse) = try await URLSession.shared.data(for: sharedAlbumRequest)
-    guard let httpSharedAlbumResponse = sharedAlbumResponse as? HTTPURLResponse,
-          (200...299).contains(httpSharedAlbumResponse.statusCode) else {
+    print("🔍 Sending POST request to create shared album entry...")
+    
+    let (sharedAlbumResponseData, sharedAlbumResponse) = try await URLSession.shared.data(for: sharedAlbumRequest)
+    
+    guard let httpSharedAlbumResponse = sharedAlbumResponse as? HTTPURLResponse else {
+        print("❌ Invalid response type for shared album creation")
+        throw SharingError.networkError
+    }
+    
+    print("🔍 Shared album creation response status: \(httpSharedAlbumResponse.statusCode)")
+    
+    if !(200...299).contains(httpSharedAlbumResponse.statusCode) {
+        if let errorString = String(data: sharedAlbumResponseData, encoding: .utf8) {
+            print("❌ Shared album creation error response: \(errorString)")
+        }
+        print("❌ Expected status code 200-299, got \(httpSharedAlbumResponse.statusCode)")
         throw SharingError.creationFailed
     }
     
