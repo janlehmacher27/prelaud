@@ -1,838 +1,5 @@
-// More Options
-                Button(action: onShare) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
-                        .foregroundColor(textColor.opacity(0.6))
-                }
-                .buttonStyle(MinimalButtonStyle())
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isHovered ? (selectedService == .appleMusic ? .black.opacity(0.05) : .white.opacity(0.05)) : Color.clear)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
-// MARK: - Tab Button
-struct TabButton: View {
-    let tab: AlbumsView.AlbumTab
-    let isSelected: Bool
-    let textColor: Color
-    let hasNotification: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Text(tab.rawValue)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundColor(isSelected ? textColor.opacity(0.8) : textColor.opacity(0.25))
-                        .tracking(1.0)
-                    
-                    if hasNotification {
-                        Circle()
-                            .fill(Color(red: 1.0, green: 0.24, blue: 0.32))
-                            .frame(width: 4, height: 4)
-                            .offset(y: -2)
-                    }
-                }
-                
-                Rectangle()
-                    .fill(isSelected ? textColor.opacity(0.6) : Color.clear)
-                    .frame(height: 0.5)
-                    .animation(.smooth(duration: 0.3), value: isSelected)
-            }
-        }
-        .buttonStyle(MinimalButtonStyle())
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Supporting Views (from original)
-
-struct ServiceButton: View {
-    let service: StreamingService
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            Text(service.rawValue)
-                .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
-                .foregroundColor(isSelected ? .black : .white.opacity(0.6))
-                .tracking(1.0)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? .white : .white.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(.white.opacity(isSelected ? 0 : 0.2), lineWidth: 0.5)
-                        )
-                )
-        }
-        .buttonStyle(MinimalButtonStyle())
-    }
-}
-
-struct EmptyStateView: View {
-    let selectedTab: AlbumsView.AlbumTab
-    let selectedService: StreamingService
-    let headerTextColor: Color
-    let buttonBackgroundColor: Color
-    let buttonBorderColor: Color
-    let onCreateAlbum: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
-            
-            Group {
-                switch selectedTab {
-                case .myAlbums:
-                    Image(systemName: selectedService == .appleMusic ? "music.note" : "music.note")
-                        .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundColor(headerTextColor.opacity(0.3))
-                    
-                    VStack(spacing: 16) {
-                        Text("No Albums Yet")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(headerTextColor.opacity(0.8))
-                        
-                        Text("Create your first album to see it appear in your discography")
-                            .font(.system(size: 16))
-                            .foregroundColor(headerTextColor.opacity(0.5))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                    
-                case .shared:
-                    Image(systemName: "person.2")
-                        .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundColor(headerTextColor.opacity(0.3))
-                    
-                    VStack(spacing: 16) {
-                        Text("No Shared Albums")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(headerTextColor.opacity(0.8))
-                        
-                        Text("Albums shared with you by other artists will appear here")
-                            .font(.system(size: 16))
-                            .foregroundColor(headerTextColor.opacity(0.5))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            if selectedTab == .myAlbums {
-                Button(action: onCreateAlbum) {
-                    Text("create album")
-                        .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
-                        .foregroundColor(headerTextColor.opacity(0.4))
-                        .tracking(1.0)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(buttonBackgroundColor)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(buttonBorderColor, lineWidth: 0.5)
-                                )
-                        )
-                }
-                .buttonStyle(MinimalButtonStyle())
-            }
-            
-            Spacer()
-        }
-    }
-}
-
-// MARK: - Background Components (unchanged from original)
-
-struct SpotifyBackground: View {
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.11, green: 0.11, blue: 0.11),
-                Color(red: 0.07, green: 0.07, blue: 0.07),
-                Color(red: 0.04, green: 0.04, blue: 0.04)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-}
-
-struct AppleMusicBackground: View {
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color.white,
-                Color(red: 0.98, green: 0.98, blue: 0.98),
-                Color(red: 0.95, green: 0.95, blue: 0.97)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-}
-
-struct AmazonMusicBackground: View {
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.12, green: 0.16, blue: 0.20),
-                Color(red: 0.08, green: 0.12, blue: 0.16),
-                Color.black
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-}
-
-struct YouTubeMusicBackground: View {
-    var body: some View {
-        LinearGradient(
-            colors: [
-                Color.black,
-                Color(red: 0.05, green: 0.05, blue: 0.05),
-                Color.black
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-}
-
-// MARK: - Album Grid Components
-
-struct SpotifyAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(albums, id: \.id) { album in
-                SpotifyAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct SpotifyAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    @State private var isHovered = false
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Album Cover
-                Group {
-                    if let coverImage = album.coverImage {
-                        Image(uiImage: coverImage)
-                            .resizable()
-                            .aspectRatio(1, contentMode: .fill)
-                    } else {
-                        Rectangle()
-                            .fill(Color(red: 0.18, green: 0.18, blue: 0.18))
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(.white.opacity(0.3))
-                            )
-                    }
-                }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                
-                // Album Info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(album.title)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    
-                    Text(album.artist)
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.6))
-                        .lineLimit(1)
-                    
-                    Text("\(album.songs.count) songs")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.4))
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                // More Options
-                Button(action: onShare) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                .buttonStyle(MinimalButtonStyle())
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isHovered ? Color.white.opacity(0.05) : Color.clear)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
-struct AppleMusicAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(albums, id: \.id) { album in
-                AppleMusicAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct AppleMusicAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onTap) {
-                HStack(spacing: 12) {
-                    albumCover
-                    albumInfo
-                    Spacer()
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            shareMenu
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.gray.opacity(0.05))
-        )
-    }
-    
-    private var albumCover: some View {
-        Group {
-            if let coverImage = album.coverImage {
-                Image(uiImage: coverImage)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 60, height: 60)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundColor(.gray.opacity(0.4))
-                    )
-            }
-        }
-    }
-    
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.black)
-                .lineLimit(1)
-            
-            Text(album.artist)
-                .font(.system(size: 14))
-                .foregroundColor(.black.opacity(0.6))
-                .lineLimit(1)
-            
-            Text("\(album.songs.count) songs")
-                .font(.system(size: 12))
-                .foregroundColor(.black.opacity(0.4))
-                .lineLimit(1)
-        }
-    }
-    
-    private var shareMenu: some View {
-        Button(action: onShare) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
-        }
-        .buttonStyle(MinimalButtonStyle())
-    }
-}
-
-// MARK: - Other Service Album Grids (placeholder implementations)
-struct AmazonMusicAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(albums, id: \.id) { album in
-                AmazonMusicAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct AmazonMusicAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                albumCover
-                albumInfo
-                Spacer()
-                shareButton
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var albumCover: some View {
-        Group {
-            if let coverImage = album.coverImage {
-                Image(uiImage: coverImage)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 56, height: 56)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white.opacity(0.3))
-                    )
-            }
-        }
-    }
-    
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white)
-                .lineLimit(1)
-            
-            Text(album.artist)
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.7))
-                .lineLimit(1)
-            
-            Text("\(album.songs.count) songs")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.5))
-                .lineLimit(1)
-        }
-    }
-    
-    private var shareButton: some View {
-        Button(action: onShare) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-        }
-        .buttonStyle(MinimalButtonStyle())
-    }
-}
-
-struct YouTubeMusicAlbumsGrid: View {
-    let albums: [Album]
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(albums, id: \.id) { album in
-                YouTubeMusicAlbumRow(
-                    album: album,
-                    onTap: { onAlbumTap(album) },
-                    onShare: { onShareAlbum(album) }
-                )
-            }
-        }
-    }
-}
-
-struct YouTubeMusicAlbumRow: View {
-    let album: Album
-    let onTap: () -> Void
-    let onShare: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                albumCover
-                albumInfo
-                Spacer()
-                shareButton
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var albumCover: some View {
-        Group {
-            if let coverImage = album.coverImage {
-                Image(uiImage: coverImage)
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 56, height: 56)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white.opacity(0.3))
-                    )
-            }
-        }
-    }
-    
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(album.title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white)
-                .lineLimit(1)
-            
-            Text(album.artist)
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.7))
-                .lineLimit(1)
-            
-            Text("\(album.songs.count) songs")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.5))
-                .lineLimit(1)
-        }
-    }
-    
-    private var shareButton: some View {
-        Button(action: onShare) {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-        }
-        .buttonStyle(MinimalButtonStyle())
-    }
-}
-
-// MARK: - API Functions
-
-@MainActor
-func fetchPendingSharingRequests() async throws -> [SharingRequest] {
-    guard let currentUser = UserProfileManager.shared.userProfile else {
-        throw SharingError.notLoggedIn
-    }
-    
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?to_user_id=eq.\(currentUser.id.uuidString)&status=eq.pending&select=*"
-    guard let url = URL(string: endpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var request = URLRequest(url: url)
-    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    
-    let (data, response) = try await URLSession.shared.data(for: request)
-    
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-        throw SharingError.fetchFailed
-    }
-    
-    // MANUAL JSON PARSING to avoid Codable issues
-    do {
-        guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw SharingError.fetchFailed
-        }
-        
-        var requests: [SharingRequest] = []
-        
-        for dict in jsonArray {
-            guard let idString = dict["id"] as? String,
-                  let id = UUID(uuidString: idString),
-                  let shareId = dict["share_id"] as? String,
-                  let fromUserId = dict["from_user_id"] as? String,
-                  let fromUsername = dict["from_username"] as? String,
-                  let toUserId = dict["to_user_id"] as? String,
-                  let albumIdString = dict["album_id"] as? String,
-                  let albumId = UUID(uuidString: albumIdString),
-                  let albumTitle = dict["album_title"] as? String,
-                  let albumArtist = dict["album_artist"] as? String,
-                  let songCount = dict["song_count"] as? Int,
-                  let isRead = dict["is_read"] as? Bool,
-                  let statusString = dict["status"] as? String else {
-                continue
-            }
-            
-            let status = SharingRequestStatus(rawValue: statusString) ?? .pending
-            
-            // Parse created_at manually
-            var finalDate = Date()
-            if let createdAtString = dict["created_at"] as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let parsedDate = formatter.date(from: createdAtString) {
-                    finalDate = parsedDate
-                } else {
-                    formatter.formatOptions = [.withInternetDateTime]
-                    finalDate = formatter.date(from: createdAtString) ?? Date()
-                }
-            }
-            
-            // Parse permissions
-            var permissions = SharePermissions()
-            if let permissionsDict = dict["permissions"] as? [String: Any] {
-                let canListen = permissionsDict["canListen"] as? Bool ?? true
-                let canDownload = permissionsDict["canDownload"] as? Bool ?? false
-                var expiresAt: Date? = nil
-                
-                if let expiresAtString = permissionsDict["expiresAt"] as? String {
-                    let expiresFormatter = ISO8601DateFormatter()
-                    expiresFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                    expiresAt = expiresFormatter.date(from: expiresAtString)
-                }
-                
-                permissions = SharePermissions(canListen: canListen, canDownload: canDownload, expiresAt: expiresAt)
-            }
-            
-            let request = SharingRequest(
-                id: id,
-                shareId: shareId,
-                fromUserId: fromUserId,
-                fromUsername: fromUsername,
-                toUserId: toUserId,
-                albumId: albumId,
-                albumTitle: albumTitle,
-                albumArtist: albumArtist,
-                songCount: songCount,
-                permissions: permissions,
-                createdAt: finalDate,
-                isRead: isRead,
-                status: status
-            )
-            
-            requests.append(request)
-        }
-        
-        print("✅ Successfully parsed \(requests.count) sharing requests")
-        return requests
-        
-    } catch {
-        print("❌ Manual parsing error: \(error)")
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("❌ Raw JSON: \(jsonString)")
-        }
-        throw SharingError.fetchFailed
-    }
-}
-
-// FIXED: Corrected approveSharingRequest function
-@MainActor
-func approveSharingRequest(_ request: SharingRequest) async throws {
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    guard let currentUser = UserProfileManager.shared.userProfile else {
-        throw SharingError.notLoggedIn
-    }
-    
-    // SCHRITT 1: Request als approved markieren
-    let requestEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
-    guard let requestUrl = URL(string: requestEndpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var requestUpdate = URLRequest(url: requestUrl)
-    requestUpdate.httpMethod = "PATCH"
-    requestUpdate.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    requestUpdate.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    requestUpdate.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    
-    let requestUpdateData: [String: Any] = [
-        "status": "approved",
-        "is_read": true,
-        "approved_at": Date().iso8601String
-    ]
-    requestUpdate.httpBody = try JSONSerialization.data(withJSONObject: requestUpdateData)
-    
-    let (_, requestResponse) = try await URLSession.shared.data(for: requestUpdate)
-    guard let httpRequestResponse = requestResponse as? HTTPURLResponse,
-          httpRequestResponse.statusCode == 204 else {
-        throw SharingError.networkError
-    }
-    
-    print("✅ Request marked as approved")
-    
-    // SCHRITT 2: SharedAlbum Eintrag erstellen (DAS WAR DER FEHLENDE TEIL!)
-    let sharedAlbumData: [String: Any] = [
-        "id": UUID().uuidString,
-        "album_id": request.albumId.uuidString,
-        "owner_id": request.fromUserId,
-        "owner_username": request.fromUsername,
-        "shared_with_user_id": currentUser.id.uuidString,
-        "share_id": request.shareId,
-        "permissions": [
-            "can_listen": true,
-            "can_download": false,
-            "expires_at": NSNull()
-        ],
-        "created_at": Date().iso8601String,
-        "album_title": request.albumTitle,
-        "album_artist": request.albumArtist,
-        "song_count": request.songCount
-    ]
-    
-    let sharedAlbumEndpoint = "\(supabaseURL)/rest/v1/shared_albums"
-    guard let sharedAlbumUrl = URL(string: sharedAlbumEndpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var sharedAlbumRequest = URLRequest(url: sharedAlbumUrl)
-    sharedAlbumRequest.httpMethod = "POST"
-    sharedAlbumRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    sharedAlbumRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    sharedAlbumRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    sharedAlbumRequest.setValue("return=representation", forHTTPHeaderField: "Prefer")
-    
-    sharedAlbumRequest.httpBody = try JSONSerialization.data(withJSONObject: sharedAlbumData)
-    
-    let (_, sharedAlbumResponse) = try await URLSession.shared.data(for: sharedAlbumRequest)
-    guard let httpSharedAlbumResponse = sharedAlbumResponse as? HTTPURLResponse,
-          (200...299).contains(httpSharedAlbumResponse.statusCode) else {
-        throw SharingError.creationFailed
-    }
-    
-    print("✅ Shared album entry created successfully")
-}
-
-@MainActor
-func rejectSharingRequest(_ request: SharingRequest) async throws {
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
-    guard let url = URL(string: endpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var urlRequest = URLRequest(url: url)
-    urlRequest.httpMethod = "PATCH"
-    urlRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    urlRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    
-    let updateData: [String: Any] = ["status": "rejected", "is_read": true]
-    urlRequest.httpBody = try JSONSerialization.data(withJSONObject: updateData)
-    
-    let (_, response) = try await URLSession.shared.data(for: urlRequest)
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
-        throw SharingError.networkError
-    }
-}
-
-@MainActor
-func markRequestAsRead(_ requestId: UUID) async throws {
-    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
-    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
-    
-    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(requestId.uuidString)"
-    guard let url = URL(string: endpoint) else {
-        throw SharingError.invalidRequest
-    }
-    
-    var request = URLRequest(url: url)
-    request.httpMethod = "PATCH"
-    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    
-    let updateData: [String: Any] = ["is_read": true]
-    request.httpBody = try JSONSerialization.data(withJSONObject: updateData)
-    
-    let (_, response) = try await URLSession.shared.data(for: request)
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
-        throw SharingError.networkError
-    }
-}
-
-// MARK: - Date Extension for ISO8601
-extension Date {
-    var iso8601String: String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: self)
-    }
-}//
-//  AlbumsView.swift - ENHANCED WITH INTEGRATED SHARING
+//
+//  AlbumsView.swift - ENHANCED WITH INTEGRATED SHARING (BUGS FIXED)
 //  prelaud
 //
 //  Complete version with sharing requests integrated into shared tab
@@ -1235,11 +402,10 @@ struct AlbumsView: View {
             Spacer()
             
             if let currentSong = audioPlayer.currentSong {
-                MiniPlayerView(song: currentSong)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: audioPlayer.currentSong)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
+                AdaptiveMiniPlayer(service: selectedService)
+                    .transition(AnyTransition.move(edge: .bottom).combined(with: .opacity))
+                    .animation(Animation.spring(response: 0.6, dampingFraction: 0.8), value: audioPlayer.currentSong?.id)
+                    .padding(EdgeInsets(top: 0, leading: 20, bottom: 20, trailing: 20))
             }
         }
     }
@@ -1425,122 +591,562 @@ struct AlbumsView: View {
     }
 }
 
-// MARK: - Enhanced Shared Albums Section
-struct EnhancedSharedAlbumsSection: View {
-    let sharedAlbums: [Album]
-    let pendingRequests: [SharingRequest]
-    let selectedService: StreamingService
-    let onAlbumTap: (Album) -> Void
-    let onShareAlbum: (Album) -> Void
-    let onAcceptRequest: (SharingRequest) -> Void
-    let onDeclineRequest: (SharingRequest) -> Void
-    
-    private var textColor: Color {
-        selectedService == .appleMusic ? .black : .white
-    }
+// MARK: - Tab Button
+struct TabButton: View {
+    let tab: AlbumsView.AlbumTab
+    let isSelected: Bool
+    let textColor: Color
+    let hasNotification: Bool
+    let onTap: () -> Void
     
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 24) {
-            // Pending Requests Section (nur wenn Anfragen da sind)
-            if !pendingRequests.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("Anfragen")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(textColor)
-                        
-                        Spacer()
-                        
-                        // Badge mit Anzahl ungelesener Anfragen
-                        let unreadCount = pendingRequests.filter { !$0.isRead }.count
-                        if unreadCount > 0 {
-                            Text("\(unreadCount)")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.black)
-                                .frame(width: 20, height: 20)
-                                .background(
-                                    Circle()
-                                        .fill(Color(red: 1.0, green: 0.24, blue: 0.32))
-                                )
-                        }
-                    }
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(tab.rawValue)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(isSelected ? textColor.opacity(0.8) : textColor.opacity(0.25))
+                        .tracking(1.0)
                     
-                    // Request Rows
-                    VStack(spacing: 0) {
-                        ForEach(pendingRequests) { request in
-                            SpotifyStyleSharingRequestRow(
-                                request: request,
-                                selectedService: selectedService,
-                                onAccept: { onAcceptRequest(request) },
-                                onDecline: { onDeclineRequest(request) }
-                            )
-                        }
+                    if hasNotification {
+                        Circle()
+                            .fill(Color(red: 1.0, green: 0.24, blue: 0.32))
+                            .frame(width: 4, height: 4)
+                            .offset(y: -2)
                     }
                 }
                 
-                // Separator (wie bei Spotify)
                 Rectangle()
-                    .fill(textColor.opacity(selectedService == .appleMusic ? 0.1 : 0.1))
-                    .frame(height: 1)
-                    .padding(.horizontal, 16)
+                    .fill(isSelected ? textColor.opacity(0.6) : Color.clear)
+                    .frame(height: 0.5)
+                    .animation(.smooth(duration: 0.3), value: isSelected)
             }
+        }
+        .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Supporting Views
+
+struct ServiceButton: View {
+    let service: StreamingService
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            Text(service.rawValue)
+                .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
+                .foregroundColor(isSelected ? .black : .white.opacity(0.6))
+                .tracking(1.0)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isSelected ? .white : .white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(.white.opacity(isSelected ? 0 : 0.2), lineWidth: 0.5) // FIXED: Completed the line
+                        )
+                )
+        }
+        .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+    }
+}
+
+struct EmptyStateView: View {
+    let selectedTab: AlbumsView.AlbumTab
+    let selectedService: StreamingService
+    let headerTextColor: Color
+    let buttonBackgroundColor: Color
+    let buttonBorderColor: Color
+    let onCreateAlbum: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
             
-            // Shared Albums Section
-            if !sharedAlbums.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text(pendingRequests.isEmpty ? "Geteilte Alben" : "Geteilte Alben")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(textColor)
-                        
-                        Spacer()
-                        
-                        Button(action: {}) {
-                            Text("Alle anzeigen")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(textColor.opacity(0.6))
-                        }
-                    }
-                    
-                    // Shared Album Rows (im Spotify-Stil)
-                    VStack(spacing: 0) {
-                        ForEach(sharedAlbums, id: \.id) { album in
-                            SpotifySharedAlbumRow(
-                                album: album,
-                                selectedService: selectedService,
-                                onTap: { onAlbumTap(album) },
-                                onShare: { onShareAlbum(album) }
-                            )
-                        }
-                    }
-                }
-            }
-            
-            // Empty State (wenn keine Anfragen und Alben)
-            if pendingRequests.isEmpty && sharedAlbums.isEmpty {
-                VStack(spacing: 24) {
-                    Spacer(minLength: 60)
-                    
-                    Image(systemName: "person.2")
+            Group {
+                switch selectedTab {
+                case .myAlbums:
+                    Image(systemName: selectedService == .appleMusic ? "music.note" : "music.note")
                         .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundColor(textColor.opacity(0.3))
+                        .foregroundColor(headerTextColor.opacity(0.3))
                     
-                    VStack(spacing: 12) {
-                        Text("Keine geteilten Alben")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(textColor.opacity(0.8))
+                    VStack(spacing: 16) {
+                        Text("No Albums Yet")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundColor(headerTextColor.opacity(0.8))
                         
-                        Text("Alben, die andere mit dir teilen, erscheinen hier")
+                        Text("Create your first album to see it appear in your discography")
                             .font(.system(size: 16))
-                            .foregroundColor(textColor.opacity(0.5))
+                            .foregroundColor(headerTextColor.opacity(0.5))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 40)
                     }
                     
-                    Spacer(minLength: 60)
+                case .shared:
+                    Image(systemName: "person.2")
+                        .font(.system(size: 48, weight: .ultraLight))
+                        .foregroundColor(headerTextColor.opacity(0.3))
+                    
+                    VStack(spacing: 16) {
+                        Text("No Shared Albums")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundColor(headerTextColor.opacity(0.8))
+                        
+                        Text("Albums shared with you by other artists will appear here")
+                            .font(.system(size: 16))
+                            .foregroundColor(headerTextColor.opacity(0.5))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
                 }
             }
+            
+            Spacer()
+            
+            if selectedTab == .myAlbums {
+                Button(action: onCreateAlbum) {
+                    Text("create album")
+                        .font(.system(size: 11, weight: .ultraLight, design: .monospaced))
+                        .foregroundColor(headerTextColor.opacity(0.4))
+                        .tracking(1.0)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(buttonBackgroundColor)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(buttonBorderColor, lineWidth: 0.5)
+                                )
+                        )
+                }
+                .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+            }
+            
+            Spacer()
         }
+    }
+}
+
+// MARK: - Background Components (unchanged from original)
+
+struct SpotifyBackground: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.11, green: 0.11, blue: 0.11),
+                Color(red: 0.07, green: 0.07, blue: 0.07),
+                Color(red: 0.04, green: 0.04, blue: 0.04)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+}
+
+struct AppleMusicBackground: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color.white,
+                Color(red: 0.98, green: 0.98, blue: 0.98),
+                Color(red: 0.95, green: 0.95, blue: 0.97)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+}
+
+struct AmazonMusicBackground: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.12, green: 0.16, blue: 0.20),
+                Color(red: 0.08, green: 0.12, blue: 0.16),
+                Color.black
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+}
+
+struct YouTubeMusicBackground: View {
+    var body: some View {
+        LinearGradient(
+            colors: [
+                Color.black,
+                Color(red: 0.05, green: 0.05, blue: 0.05),
+                Color.black
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+}
+
+// MARK: - Album Grid Components
+
+struct SpotifyAlbumsGrid: View {
+    let albums: [Album]
+    let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(albums, id: \.id) { album in
+                SpotifyAlbumRow(
+                    album: album,
+                    onTap: { onAlbumTap(album) },
+                    onShare: { onShareAlbum(album) }
+                )
+            }
+        }
+    }
+}
+
+struct SpotifyAlbumRow: View {
+    let album: Album
+    let onTap: () -> Void
+    let onShare: () -> Void
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Album Cover
+                Group {
+                    if let coverImage = album.coverImage {
+                        Image(uiImage: coverImage)
+                            .resizable()
+                            .aspectRatio(1, contentMode: .fill)
+                    } else {
+                        Rectangle()
+                            .fill(Color(red: 0.18, green: 0.18, blue: 0.18))
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white.opacity(0.3))
+                            )
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                
+                // Album Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(album.title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    Text(album.artist)
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                    
+                    Text("\(album.songs.count) songs")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.4))
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                // More Options
+                Button(action: onShare) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? Color.white.opacity(0.05) : Color.clear)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
+
+struct AppleMusicAlbumsGrid: View {
+    let albums: [Album]
+    let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(albums, id: \.id) { album in
+                AppleMusicAlbumRow(
+                    album: album,
+                    onTap: { onAlbumTap(album) },
+                    onShare: { onShareAlbum(album) }
+                )
+            }
+        }
+    }
+}
+
+struct AppleMusicAlbumRow: View {
+    let album: Album
+    let onTap: () -> Void
+    let onShare: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onTap) {
+                HStack(spacing: 12) {
+                    albumCover
+                    albumInfo
+                    Spacer()
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            shareMenu
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.gray.opacity(0.05))
+        )
+    }
+    
+    private var albumCover: some View {
+        Group {
+            if let coverImage = album.coverImage {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .aspectRatio(1, contentMode: .fill)
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 60, height: 60)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 20))
+                            .foregroundColor(.gray.opacity(0.4))
+                    )
+            }
+        }
+    }
+    
+    private var albumInfo: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(album.title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.black)
+                .lineLimit(1)
+            
+            Text(album.artist)
+                .font(.system(size: 14))
+                .foregroundColor(.black.opacity(0.6))
+                .lineLimit(1)
+            
+            Text("\(album.songs.count) songs")
+                .font(.system(size: 12))
+                .foregroundColor(.black.opacity(0.4))
+                .lineLimit(1)
+        }
+    }
+    
+    private var shareMenu: some View {
+        Button(action: onShare) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
+        }
+        .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+    }
+}
+
+// MARK: - Other Service Album Grids
+struct AmazonMusicAlbumsGrid: View {
+    let albums: [Album]
+    let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(albums, id: \.id) { album in
+                AmazonMusicAlbumRow(
+                    album: album,
+                    onTap: { onAlbumTap(album) },
+                    onShare: { onShareAlbum(album) }
+                )
+            }
+        }
+    }
+}
+
+struct AmazonMusicAlbumRow: View {
+    let album: Album
+    let onTap: () -> Void
+    let onShare: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                albumCover
+                albumInfo
+                Spacer()
+                shareButton
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var albumCover: some View {
+        Group {
+            if let coverImage = album.coverImage {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .aspectRatio(1, contentMode: .fill)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.3))
+                    )
+            }
+        }
+    }
+    
+    private var albumInfo: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(album.title)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white)
+                .lineLimit(1)
+            
+            Text(album.artist)
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+            
+            Text("\(album.songs.count) songs")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.5))
+                .lineLimit(1)
+        }
+    }
+    
+    private var shareButton: some View {
+        Button(action: onShare) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white.opacity(0.6))
+        }
+        .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+    }
+}
+
+struct YouTubeMusicAlbumsGrid: View {
+    let albums: [Album]
+    let onAlbumTap: (Album) -> Void
+    let onShareAlbum: (Album) -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(albums, id: \.id) { album in
+                YouTubeMusicAlbumRow(
+                    album: album,
+                    onTap: { onAlbumTap(album) },
+                    onShare: { onShareAlbum(album) }
+                )
+            }
+        }
+    }
+}
+
+struct YouTubeMusicAlbumRow: View {
+    let album: Album
+    let onTap: () -> Void
+    let onShare: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                albumCover
+                albumInfo
+                Spacer()
+                shareButton
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private var albumCover: some View {
+        Group {
+            if let coverImage = album.coverImage {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .aspectRatio(1, contentMode: .fill)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white.opacity(0.3))
+                    )
+            }
+        }
+    }
+    
+    private var albumInfo: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(album.title)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white)
+                .lineLimit(1)
+            
+            Text(album.artist)
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+            
+            Text("\(album.songs.count) songs")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.5))
+                .lineLimit(1)
+        }
+    }
+    
+    private var shareButton: some View {
+        Button(action: onShare) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white.opacity(0.6))
+        }
+        .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
     }
 }
 
@@ -1601,7 +1207,7 @@ struct SpotifyStyleSharingRequestRow: View {
                                 .fill(selectedService == .appleMusic ? .black.opacity(0.08) : .white.opacity(0.08))
                         )
                 }
-                .buttonStyle(MinimalButtonStyle())
+                .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
                 
                 // Accept Button
                 Button(action: onAccept) {
@@ -1614,7 +1220,7 @@ struct SpotifyStyleSharingRequestRow: View {
                                 .fill(.white)
                         )
                 }
-                .buttonStyle(MinimalButtonStyle())
+                .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
             }
         }
         .padding(.vertical, 12)
@@ -1697,4 +1303,272 @@ struct SpotifySharedAlbumRow: View {
                         .font(.system(size: 20))
                         .foregroundColor(textColor.opacity(0.6))
                 }
-                .buttonStyle(Minimal
+                .buttonStyle(PlainButtonStyle()) // FIXED: Changed from MinimalButtonStyle to PlainButtonStyle
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? (selectedService == .appleMusic ? .black.opacity(0.05) : .white.opacity(0.05)) : Color.clear)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
+
+// MARK: - API Functions
+
+@MainActor
+func fetchPendingSharingRequests() async throws -> [SharingRequest] {
+    guard let currentUser = UserProfileManager.shared.userProfile else {
+        throw SharingError.notLoggedIn
+    }
+    
+    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
+    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
+    
+    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?to_user_id=eq.\(currentUser.id.uuidString)&status=eq.pending&select=*"
+    guard let url = URL(string: endpoint) else {
+        throw SharingError.invalidRequest
+    }
+    
+    var request = URLRequest(url: url)
+    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    
+    let (data, response) = try await URLSession.shared.data(for: request)
+    
+    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        throw SharingError.fetchFailed
+    }
+    
+    // MANUAL JSON PARSING to avoid Codable issues
+    do {
+        guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw SharingError.fetchFailed
+        }
+        
+        var requests: [SharingRequest] = []
+        
+        for dict in jsonArray {
+            guard let idString = dict["id"] as? String,
+                  let id = UUID(uuidString: idString),
+                  let shareId = dict["share_id"] as? String,
+                  let fromUserId = dict["from_user_id"] as? String,
+                  let fromUsername = dict["from_username"] as? String,
+                  let toUserId = dict["to_user_id"] as? String,
+                  let albumIdString = dict["album_id"] as? String,
+                  let albumId = UUID(uuidString: albumIdString),
+                  let albumTitle = dict["album_title"] as? String,
+                  let albumArtist = dict["album_artist"] as? String,
+                  let songCount = dict["song_count"] as? Int,
+                  let isRead = dict["is_read"] as? Bool,
+                  let statusString = dict["status"] as? String else {
+                continue
+            }
+            
+            let status = SharingRequestStatus(rawValue: statusString) ?? .pending
+            
+            // Parse created_at manually
+            var finalDate = Date()
+            if let createdAtString = dict["created_at"] as? String {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let parsedDate = formatter.date(from: createdAtString) {
+                    finalDate = parsedDate
+                } else {
+                    formatter.formatOptions = [.withInternetDateTime]
+                    finalDate = formatter.date(from: createdAtString) ?? Date()
+                }
+            }
+            
+            // Parse permissions
+            var permissions = SharePermissions()
+            if let permissionsDict = dict["permissions"] as? [String: Any] {
+                let canListen = permissionsDict["canListen"] as? Bool ?? true
+                let canDownload = permissionsDict["canDownload"] as? Bool ?? false
+                var expiresAt: Date? = nil
+                
+                if let expiresAtString = permissionsDict["expiresAt"] as? String {
+                    let expiresFormatter = ISO8601DateFormatter()
+                    expiresFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    expiresAt = expiresFormatter.date(from: expiresAtString)
+                }
+                
+                permissions = SharePermissions(canListen: canListen, canDownload: canDownload, expiresAt: expiresAt)
+            }
+            
+            let request = SharingRequest(
+                id: id,
+                shareId: shareId,
+                fromUserId: fromUserId,
+                fromUsername: fromUsername,
+                toUserId: toUserId,
+                albumId: albumId,
+                albumTitle: albumTitle,
+                albumArtist: albumArtist,
+                songCount: songCount,
+                permissions: permissions,
+                createdAt: finalDate,
+                isRead: isRead,
+                status: status
+            )
+            
+            requests.append(request)
+        }
+        
+        print("✅ Successfully parsed \(requests.count) sharing requests")
+        return requests
+        
+    } catch {
+        print("❌ Manual parsing error: \(error)")
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("❌ Raw JSON: \(jsonString)")
+        }
+        throw SharingError.fetchFailed
+    }
+}
+
+// FIXED: Corrected approveSharingRequest function
+@MainActor
+func approveSharingRequest(_ request: SharingRequest) async throws {
+    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
+    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
+    
+    guard let currentUser = UserProfileManager.shared.userProfile else {
+        throw SharingError.notLoggedIn
+    }
+    
+    // SCHRITT 1: Request als approved markieren
+    let requestEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
+    guard let requestUrl = URL(string: requestEndpoint) else {
+        throw SharingError.invalidRequest
+    }
+    
+    var requestUpdate = URLRequest(url: requestUrl)
+    requestUpdate.httpMethod = "PATCH"
+    requestUpdate.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    requestUpdate.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+    requestUpdate.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    let requestUpdateData: [String: Any] = [
+        "status": "approved",
+        "is_read": true,
+        "approved_at": Date().iso8601String
+    ]
+    requestUpdate.httpBody = try JSONSerialization.data(withJSONObject: requestUpdateData)
+    
+    let (_, requestResponse) = try await URLSession.shared.data(for: requestUpdate)
+    guard let httpRequestResponse = requestResponse as? HTTPURLResponse,
+          httpRequestResponse.statusCode == 204 else {
+        throw SharingError.networkError
+    }
+    
+    print("✅ Request marked as approved")
+    
+    // SCHRITT 2: SharedAlbum Eintrag erstellen (DAS WAR DER FEHLENDE TEIL!)
+    let sharedAlbumData: [String: Any] = [
+        "id": UUID().uuidString,
+        "album_id": request.albumId.uuidString,
+        "owner_id": request.fromUserId,
+        "owner_username": request.fromUsername,
+        "shared_with_user_id": currentUser.id.uuidString,
+        "share_id": request.shareId,
+        "permissions": [
+            "can_listen": true,
+            "can_download": false,
+            "expires_at": NSNull()
+        ],
+        "created_at": Date().iso8601String,
+        "album_title": request.albumTitle,
+        "album_artist": request.albumArtist,
+        "song_count": request.songCount
+    ]
+    
+    let sharedAlbumEndpoint = "\(supabaseURL)/rest/v1/shared_albums"
+    guard let sharedAlbumUrl = URL(string: sharedAlbumEndpoint) else {
+        throw SharingError.invalidRequest
+    }
+    
+    var sharedAlbumRequest = URLRequest(url: sharedAlbumUrl)
+    sharedAlbumRequest.httpMethod = "POST"
+    sharedAlbumRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    sharedAlbumRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+    sharedAlbumRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    sharedAlbumRequest.setValue("return=representation", forHTTPHeaderField: "Prefer")
+    
+    sharedAlbumRequest.httpBody = try JSONSerialization.data(withJSONObject: sharedAlbumData)
+    
+    let (_, sharedAlbumResponse) = try await URLSession.shared.data(for: sharedAlbumRequest)
+    guard let httpSharedAlbumResponse = sharedAlbumResponse as? HTTPURLResponse,
+          (200...299).contains(httpSharedAlbumResponse.statusCode) else {
+        throw SharingError.creationFailed
+    }
+    
+    print("✅ Shared album entry created successfully")
+}
+
+@MainActor
+func rejectSharingRequest(_ request: SharingRequest) async throws {
+    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
+    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
+    
+    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(request.id.uuidString)"
+    guard let url = URL(string: endpoint) else {
+        throw SharingError.invalidRequest
+    }
+    
+    var urlRequest = URLRequest(url: url)
+    urlRequest.httpMethod = "PATCH"
+    urlRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    urlRequest.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    let updateData: [String: Any] = ["status": "rejected", "is_read": true]
+    urlRequest.httpBody = try JSONSerialization.data(withJSONObject: updateData)
+    
+    let (_, response) = try await URLSession.shared.data(for: urlRequest)
+    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
+        throw SharingError.networkError
+    }
+}
+
+@MainActor
+func markRequestAsRead(_ requestId: UUID) async throws {
+    let supabaseURL = "https://auzsunnwanzljiwdpzov.supabase.co"
+    let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1enN1bm53YW56bGppd2Rwem92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMzIyNjksImV4cCI6MjA2NzcwODI2OX0.UmuoVT-7uXq5SMFr9duiurbE52Oe865w4ghYPkFwexE"
+    
+    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?id=eq.\(requestId.uuidString)"
+    guard let url = URL(string: endpoint) else {
+        throw SharingError.invalidRequest
+    }
+    
+    var request = URLRequest(url: url)
+    request.httpMethod = "PATCH"
+    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    
+    let updateData: [String: Any] = ["is_read": true]
+    request.httpBody = try JSONSerialization.data(withJSONObject: updateData)
+    
+    let (_, response) = try await URLSession.shared.data(for: request)
+    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 else {
+        throw SharingError.networkError
+    }
+}
+
+// MARK: - Date Extension for ISO8601
+extension Date {
+    var iso8601String: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: self)
+    }
+}
