@@ -1186,7 +1186,7 @@ struct UniversalAlbumRow: View {
 func fetchPendingSharingRequests() async throws -> [SharingRequest] {
     print("🔍 Fetching pending sharing requests...")
     
-    guard let currentUser = UserProfileManager.shared.userProfile else {
+    guard let currentUser = await UserProfileManager.shared.userProfile else {
         print("❌ No current user found")
         return []
     }
