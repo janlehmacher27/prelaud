@@ -582,6 +582,7 @@ struct AlbumsView: View {
         print("🗑️ Album deleted: \(album.title)")
     }
     
+    // NEW: Edit Album Function
     private func editAlbum(_ album: Album) {
         HapticFeedbackManager.shared.lightImpact()
         albumToEdit = album
@@ -693,7 +694,7 @@ struct SpotifyAlbumsGrid: View {
     let onAlbumTap: (Album) -> Void
     let onShareAlbum: (Album) -> Void
     let onDeleteAlbum: (Album) -> Void
-    let onEditAlbum: (Album) -> Void
+    let onEditAlbum: (Album) -> Void  // NEW: Edit callback
     
     var body: some View {
         LazyVStack(spacing: 0) {
@@ -703,7 +704,7 @@ struct SpotifyAlbumsGrid: View {
                     onTap: { onAlbumTap(album) },
                     onShare: { onShareAlbum(album) },
                     onDelete: { onDeleteAlbum(album) },
-                    onEdit: { onEditAlbum(album) }
+                    onEdit: { onEditAlbum(album) }  // NEW: Edit callback
                 )
             }
         }
