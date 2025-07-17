@@ -598,75 +598,75 @@ struct MinimalSongSelectionStep: View {
     }
     
     private func processAudioFile(_ url: URL) {
-        HapticFeedbackManager.shared.lightImpact()
-        
-        Task {
-            await MainActor.run {
-                isProcessing = true
-                processingStatus = "Processing audio file..."
-            }
+            HapticFeedbackManager.shared.lightImpact()
             
-            do {
-                let asset = AVURLAsset(url: url)
-                let duration = try await asset.load(.duration)
-                let durationSeconds = CMTimeGetSeconds(duration)
-                
-                let filename = url.lastPathComponent
-                let songId = UUID().uuidString
-                
-                let audioFile = AudioFile(
-                    id: UUID(),
-                    songId: songId,
-                    url: url,
-                    originalFilename: filename,
-                    songTitle: String(filename.prefix(while: { $0 != "." })),
-                    duration: durationSeconds,
-                    isExplicit: false,
-                    supabaseFilename: nil
-                )
-                
+            Task {
                 await MainActor.run {
-                    songs.append(audioFile)
-                    processingStatus = "Uploading to cloud..."
+                    isProcessing = true
+                    processingStatus = "Processing audio file..."
                 }
                 
-                // Upload to Supabase
-                let supabaseFilename = try await supabaseManager.uploadAudioFile(
-                    url,
-                    filename: filename,
-                    songId: songId
-                )
-                
-                await MainActor.run {
-                    if let index = songs.firstIndex(where: { $0.songId == songId }) {
-                        songs[index].supabaseFilename = supabaseFilename
+                do {
+                    let asset = AVURLAsset(url: url)
+                    let duration = try await asset.load(.duration)
+                    let durationSeconds = CMTimeGetSeconds(duration)
+                    
+                    let filename = url.lastPathComponent
+                    let songId = UUID().uuidString
+                    
+                    let audioFile = AudioFile(
+                        id: UUID(),
+                        songId: songId,
+                        url: url,
+                        originalFilename: filename,
+                        songTitle: String(filename.prefix(while: { $0 != "." })),
+                        duration: durationSeconds,
+                        isExplicit: false,
+                        supabaseFilename: nil
+                    )
+                    
+                    await MainActor.run {
+                        songs.append(audioFile)
+                        processingStatus = "Uploading to cloud..."
                     }
                     
-                    HapticFeedbackManager.shared.success()
-                    processingStatus = "Upload complete!"
+                    // Upload to Supabase
+                    let supabaseFilename = try await supabaseManager.uploadAudioFile(
+                        url,
+                        filename: filename,
+                        songId: songId
+                    )
                     
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        self.isProcessing = false
-                        self.processingStatus = "Processing..."
+                    await MainActor.run {
+                        if let index = songs.firstIndex(where: { $0.songId == songId }) {
+                            songs[index].supabaseFilename = supabaseFilename
+                        }
+                        
+                        HapticFeedbackManager.shared.success()
+                        processingStatus = "Upload complete!"
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.isProcessing = false
+                            self.processingStatus = "Processing..."
+                        }
                     }
-                }
-                
-                try? FileManager.default.removeItem(at: url)
-                
-            } catch {
-                await MainActor.run {
-                    HapticFeedbackManager.shared.uploadFailed()
-                    processingStatus = "Upload failed: \(error.localizedDescription)"
                     
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                        self.isProcessing = false
-                        self.processingStatus = "Processing..."
+                    // ADDED: Clean up temporary file if it's in the temp directory
+                    if url.path.contains("tmp") {
+                        try? FileManager.default.removeItem(at: url)
+                        print("🧹 Cleaned up temporary file: \(url.lastPathComponent)")
                     }
+                    
+                } catch {
+                    await MainActor.run {
+                        processingStatus = "Upload failed: \(error.localizedDescription)"
+                        isProcessing = false
+                    }
+                    print("❌ Failed to process audio file: \(error)")
+                    HapticFeedbackManager.shared.error()
                 }
             }
         }
-    }
-    
     private func removeSong(at index: Int) {
         let audioFile = songs[index]
         SupabaseAudioManager.shared.cancelUpload(for: audioFile.songId)
@@ -861,19 +861,52 @@ struct AudioFilePicker: UIViewControllerRepresentable {
         
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
-            HapticFeedbackManager.shared.selection()
-            parent.onAudioSelected(url)
+            
+            print("🔍 Selected file: \(url.path)")
+            print("🔍 File exists: \(FileManager.default.fileExists(atPath: url.path))")
+            print("🔍 Is security scoped: \(url.startAccessingSecurityScopedResource())")
+            
+            // FIXED: Start accessing security-scoped resource
+            let accessing = url.startAccessingSecurityScopedResource()
+            print("🔍 Security scoped access granted: \(accessing)")
+            
+            defer {
+                // Always stop accessing when done
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            
+            // Copy the file to a temporary location in our sandbox
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
+            
+            do {
+                // Remove existing temp file if it exists
+                if FileManager.default.fileExists(atPath: tempFile.path) {
+                    try FileManager.default.removeItem(at: tempFile)
+                }
+                
+                // Copy the file to our sandbox
+                try FileManager.default.copyItem(at: url, to: tempFile)
+                print("✅ File copied to temp location: \(tempFile.path)")
+                
+                HapticFeedbackManager.shared.selection()
+                
+                // Use the copied file
+                parent.onAudioSelected(tempFile)
+                
+            } catch {
+                print("❌ Failed to copy file: \(error)")
+                
+                // Fallback: Try to access original URL directly
+                HapticFeedbackManager.shared.selection()
+                parent.onAudioSelected(url)
+            }
         }
         
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             HapticFeedbackManager.shared.lightImpact()
         }
     }
-}
-
-#Preview {
-    UploadView(
-        onAlbumCreated: { _ in },
-        onDismiss: { }
-    )
 }

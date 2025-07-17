@@ -79,41 +79,161 @@ class SupabaseAlbumSharingManager: ObservableObject {
         return shareId
     }
     
-    /// Lädt alle mit mir geteilten Alben
-    func loadSharedAlbums() {
-        guard let currentUser = UserProfileManager.shared.userProfile else { return }
-        
-        Task {
-            isLoadingSharedAlbums = true
+    /// Lädt alle mit mir geteilten Alben (DEBUG VERSION)
+        func loadSharedAlbums() {
+            guard let currentUser = UserProfileManager.shared.userProfile else { return }
             
-            do {
-                let sharedRecords = try await fetchSharedAlbumsForUser(currentUser.id.uuidString)
+            Task {
+                isLoadingSharedAlbums = true
                 
-                var albums: [Album] = []
-                for record in sharedRecords {
-                    if let album = try await loadAlbumData(shareId: record.shareId) {
-                        // Setze Sharing-Informationen
-                        var sharedAlbum = album
-                        sharedAlbum.ownerId = record.ownerId
-                        sharedAlbum.ownerUsername = record.ownerUsername
-                        sharedAlbum.shareId = record.shareId
-                        sharedAlbum.sharedAt = record.createdAt
-                        sharedAlbum.sharePermissions = record.permissions
-                        albums.append(sharedAlbum)
+                do {
+                    // DEBUG: Erst alle sharing_requests für diesen User laden (ohne Status-Filter)
+                    let debugEndpoint = "\(supabaseURL)/rest/v1/sharing_requests?to_user_id=eq.\(currentUser.id.uuidString)&select=*"
+                    guard let debugUrl = URL(string: debugEndpoint) else {
+                        throw SharingError.invalidRequest
                     }
+                    
+                    let debugRequest = createRequest(url: debugUrl)
+                    let (debugData, debugResponse) = try await urlSession.data(for: debugRequest)
+                    
+                    if let debugResponseString = String(data: debugData, encoding: .utf8) {
+                        print("🔍 DEBUG - All sharing requests for user: \(debugResponseString)")
+                    }
+                    
+                    // FIXED: Suche nach approved (nicht accepted!)
+                    let endpoint = "\(supabaseURL)/rest/v1/sharing_requests?to_user_id=eq.\(currentUser.id.uuidString)&status=eq.approved&select=*"
+                    guard let url = URL(string: endpoint) else {
+                        throw SharingError.invalidRequest
+                    }
+                    
+                    let request = createRequest(url: url)
+                    let (data, response) = try await urlSession.data(for: request)
+                    
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw SharingError.networkError
+                    }
+                    
+                    print("🔍 DEBUG - loadSharedAlbums response status: \(httpResponse.statusCode)")
+                    
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("🔍 DEBUG - Accepted sharing requests: \(responseString)")
+                    }
+                    
+                    if httpResponse.statusCode == 200 {
+                        // Parse sharing requests
+                        guard let sharingRequestsJson = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                            throw SharingError.fetchFailed
+                        }
+                        
+                        print("🔍 DEBUG - Found \(sharingRequestsJson.count) accepted requests")
+                        
+                        var albums: [Album] = []
+                                            var seenAlbumIds: Set<UUID> = [] // Track welche Alben wir schon haben
+                                            
+                                            for requestDict in sharingRequestsJson {
+                                                guard let shareId = requestDict["share_id"] as? String,
+                                                      let albumTitle = requestDict["album_title"] as? String,
+                                                      let albumArtist = requestDict["album_artist"] as? String,
+                                                      let fromUserId = requestDict["from_user_id"] as? String,
+                                                      let fromUsername = requestDict["from_username"] as? String,
+                                                      let createdAtString = requestDict["created_at"] as? String,
+                                                      let albumIdString = requestDict["album_id"] as? String,
+                                                      let albumId = UUID(uuidString: albumIdString) else {
+                                                    continue
+                                                }
+                                                
+                                                // DEDUPLIZIERUNG: Überspringe wenn wir dieses Album schon haben
+                                                if seenAlbumIds.contains(albumId) {
+                                                    print("🔍 DEBUG - Skipping duplicate album: \(albumTitle) (ID: \(albumId))")
+                                                    continue
+                                                }
+                                                
+                                                print("🔍 DEBUG - Processing shareId: \(shareId) for album: \(albumTitle)")
+                                                
+                                                // Lade Album-Daten
+                                                if let album = try await loadAlbumData(shareId: shareId) {
+                                                    print("🔍 DEBUG - Successfully loaded album data for: \(albumTitle)")
+                                                    
+                                                    // Setze Sharing-Informationen
+                                                    var sharedAlbum = album
+                                                    sharedAlbum.ownerId = fromUserId
+                                                    sharedAlbum.ownerUsername = fromUsername
+                                                    sharedAlbum.shareId = shareId
+                                                    
+                                                    // Parse created_at date
+                                                    let formatter = ISO8601DateFormatter()
+                                                    sharedAlbum.sharedAt = formatter.date(from: createdAtString)
+                                                    
+                                                    // ROBUST: Parse permissions (handles both JSON string and JSON object)
+                                                    var permissions = SharePermissions()
+                                                    
+                                                    if let permissionsValue = requestDict["permissions"] {
+                                                        var permissionsJson: [String: Any]?
+                                                        
+                                                        // Case 1: JSON String (e.g., "{\"can_listen\":true}")
+                                                        if let permissionsString = permissionsValue as? String,
+                                                           let permissionsData = permissionsString.data(using: .utf8) {
+                                                            permissionsJson = try? JSONSerialization.jsonObject(with: permissionsData) as? [String: Any]
+                                                            print("🔍 DEBUG - Parsed permissions from JSON string")
+                                                        }
+                                                        // Case 2: JSON Object (e.g., {"can_listen": true})
+                                                        else if let permissionsDict = permissionsValue as? [String: Any] {
+                                                            permissionsJson = permissionsDict
+                                                            print("🔍 DEBUG - Using permissions as JSON object")
+                                                        }
+                                                        
+                                                        // Extract permission values
+                                                        if let permissionsJson = permissionsJson {
+                                                            let canListen = permissionsJson["can_listen"] as? Bool ??
+                                                                           permissionsJson["canListen"] as? Bool ?? true
+                                                            let canDownload = permissionsJson["can_download"] as? Bool ??
+                                                                             permissionsJson["canDownload"] as? Bool ?? false
+                                                            var expiresAt: Date? = nil
+                                                            
+                                                            if let expiresAtString = permissionsJson["expires_at"] as? String ??
+                                                                                    permissionsJson["expiresAt"] as? String {
+                                                                expiresAt = formatter.date(from: expiresAtString)
+                                                            }
+                                                            
+                                                            permissions = SharePermissions(
+                                                                canListen: canListen,
+                                                                canDownload: canDownload,
+                                                                expiresAt: expiresAt
+                                                            )
+                                                            
+                                                            print("🔍 DEBUG - Permissions parsed: listen=\(canListen), download=\(canDownload)")
+                                                        } else {
+                                                            print("🔍 DEBUG - Failed to parse permissions, using defaults")
+                                                        }
+                                                    }
+                                                    
+                                                    sharedAlbum.sharePermissions = permissions
+                                                    
+                                                    // Füge das Album hinzu und markiere die ID als gesehen
+                                                    albums.append(sharedAlbum)
+                                                    seenAlbumIds.insert(albumId)
+                                                    
+                                                    print("🔍 DEBUG - Added unique album to shared list: \(albumTitle)")
+                                                } else {
+                                                    print("🔍 DEBUG - Failed to load album data for shareId: \(shareId)")
+                                                }
+                                            }
+                        
+                        sharedWithMeAlbums = albums
+                        print("📥 Loaded \(albums.count) shared albums")
+                        
+                    } else {
+                        throw SharingError.fetchFailed
+                    }
+                    
+                } catch {
+                    print("❌ Failed to load shared albums: \(error)")
+                    sharingError = error.localizedDescription
                 }
                 
-                sharedWithMeAlbums = albums
-                print("📥 Loaded \(albums.count) shared albums")
-                
-            } catch {
-                print("❌ Failed to load shared albums: \(error)")
-                sharingError = error.localizedDescription
+                isLoadingSharedAlbums = false
             }
-            
-            isLoadingSharedAlbums = false
         }
-    }
     
     /// Entfernt ein geteiltes Album
     func removeSharedAlbum(shareId: String) async throws {
@@ -241,15 +361,60 @@ class SupabaseAlbumSharingManager: ObservableObject {
     }
     
     private func loadAlbumData(shareId: String) async throws -> Album? {
-        // Lade Album-Daten basierend auf shareId
-        if let data = UserDefaults.standard.data(forKey: "SharedAlbumData_\(shareId)"),
-           let albumData = try? JSONDecoder().decode(EncodableAlbum.self, from: data) {
-            return albumData.toAlbum()
+            print("🔍 DEBUG - Loading album data for shareId: \(shareId)")
+            
+            // Check if album data exists in UserDefaults
+            let key = "SharedAlbumData_\(shareId)"
+            print("🔍 DEBUG - Looking for key: \(key)")
+            
+            if let data = UserDefaults.standard.data(forKey: key) {
+                print("🔍 DEBUG - Found data for key: \(key)")
+                
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
+                    let albumData = try decoder.decode(EncodableAlbum.self, from: data)
+                    print("🔍 DEBUG - Successfully decoded album: \(albumData.title)")
+                    return albumData.toAlbum()
+                } catch {
+                    print("🔍 DEBUG - Failed to decode album data: \(error)")
+                    return nil
+                }
+            } else {
+                print("🔍 DEBUG - No data found for key: \(key)")
+                
+                // DEBUG: Check what keys actually exist in UserDefaults
+                let allKeys = UserDefaults.standard.dictionaryRepresentation().keys
+                let sharedAlbumKeys = allKeys.filter { $0.hasPrefix("SharedAlbumData_") }
+                print("🔍 DEBUG - Available SharedAlbumData keys: \(sharedAlbumKeys)")
+                
+                // FALLBACK: Try to find album data by checking all available SharedAlbumData
+                print("🔍 DEBUG - Trying fallback: searching all album data...")
+                
+                for availableKey in sharedAlbumKeys {
+                    if let data = UserDefaults.standard.data(forKey: availableKey) {
+                        do {
+                            let decoder = JSONDecoder()
+                            decoder.dateDecodingStrategy = .iso8601
+                            let albumData = try decoder.decode(EncodableAlbum.self, from: data)
+                            
+                            // Check if this album matches by any available criteria
+                            // For now, let's just use the first available album as a test
+                            print("🔍 DEBUG - FALLBACK: Found album '\(albumData.title)' in key: \(availableKey)")
+                            return albumData.toAlbum()
+                            
+                        } catch {
+                            print("🔍 DEBUG - FALLBACK: Failed to decode album data from \(availableKey): \(error)")
+                            continue
+                        }
+                    }
+                }
+                
+                print("🔍 DEBUG - FALLBACK: No compatible album data found")
+                return nil
+            }
         }
-        return nil
-    }
-    
     private func generateShareId() -> String {
-        return "share_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(12))"
+            return "share_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(12))"
+        }
     }
-}

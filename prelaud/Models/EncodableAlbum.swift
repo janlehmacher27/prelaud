@@ -45,20 +45,36 @@ struct EncodableAlbum: Codable {
     }
     
     func toAlbum() -> Album {
-        // FIXED: var statt let für mutierbare Properties
-        var album = Album(
-            title: title,
-            artist: artist,
-            songs: songs.map { $0.toSong() },
-            coverImage: nil, // Cover Images werden separat behandelt
-            releaseDate: releaseDate
-        )
-        // Setze sharing properties
-        album.ownerId = ownerId
-        album.ownerUsername = ownerUsername
-        album.shareId = shareId
-        return album
-    }
+            // Erstelle Album mit neuer ID (kann nicht vermieden werden wegen struct-Design)
+            var album = Album(
+                title: title,
+                artist: artist,
+                songs: songs.map { $0.toSong() },
+                coverImage: nil, // Cover Images werden separat behandelt
+                releaseDate: releaseDate
+            )
+            
+            // Setze sharing properties
+            album.ownerId = ownerId
+            album.ownerUsername = ownerUsername
+            album.shareId = shareId
+            
+            print("🔍 DEBUG - Created album from EncodableAlbum:")
+            print("  - Original ID: \(self.id)")
+            print("  - New ID: \(album.id)")
+            print("  - Title: \(album.title)")
+            print("  - Artist: \(album.artist)")
+            print("  - Songs: \(album.songs.count)")
+            print("  - ShareID: \(album.shareId ?? "none")")
+            print("  - Owner: \(album.ownerUsername ?? "none")")
+            
+            // Debug each song
+            for (index, song) in album.songs.enumerated() {
+                print("  - Song \(index): \(song.title) | AudioFile: \(song.audioFileName ?? "none") | SongID: \(song.songId ?? "none")")
+            }
+            
+            return album
+        }
 }
 
 // MARK: - Encodable Song
@@ -82,14 +98,16 @@ struct EncodableSong: Codable {
     }
     
     func toSong() -> Song {
-        return Song(
-            title: title,
-            artist: artist,
-            duration: duration,
-            coverImage: nil,
-            audioFileName: audioFileName,
-            isExplicit: isExplicit,
-            songId: songId
-        )
-    }
+            let song = Song(
+                title: title,
+                artist: artist,
+                duration: duration,
+                coverImage: nil,
+                audioFileName: audioFileName,
+                isExplicit: isExplicit,
+                songId: songId
+            )
+            
+            return song
+        }
 }
