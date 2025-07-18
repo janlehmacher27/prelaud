@@ -48,7 +48,9 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) { }
             Button("Enable") {
                 HapticFeedbackManager.shared.success()
-                dataManager.enableCloudSync()
+                Task {
+                    await dataManager.enableCloudSync()
+                }
             }
         } message: {
             Text("Sync your albums across all your devices. Your data stays secure and private.")

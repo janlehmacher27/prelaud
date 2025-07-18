@@ -13,9 +13,10 @@ struct ContentView: View {
     @State private var selectedService: StreamingService = .spotify
     @State private var showingUpload = false
     @StateObject private var audioPlayer = AudioPlayerManager.shared
-    @StateObject private var supabaseManager = SupabaseAudioManager.shared
+    @StateObject private var supabaseManager = AudioManager.shared
     @StateObject private var dataManager = DataPersistenceManager.shared
     @StateObject private var profileManager = UserProfileManager.shared
+    @StateObject private var syncManager = DatabaseSyncManager.shared
     
     // Welcome Screen State
     @State private var showWelcome = true
@@ -40,28 +41,35 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            // Profile Setup (wenn noch nicht eingerichtet)
-            if !profileManager.isProfileSetup {
+            if syncManager.shouldShowSetup {
                 ProfileSetupView()
-                    .zIndex(10)
             } else {
-                // Normale App-Flows
-                mainAppContent
+                ZStack {
+                    // Profile Setup (wenn noch nicht eingerichtet)
+                    if !profileManager.isProfileSetup {
+                        ProfileSetupView()
+                            .zIndex(10)
+                    } else {
+                        // Normale App-Flows
+                        mainAppContent
+                    }
+                }
+                .onAppear {
+                    if albums.isEmpty {
+                        albums = dataManager.savedAlbums
+                    }
+                }
+                .sheet(isPresented: $showingSettings) {
+                    SettingsView()
+                }
+                .task {
+                    await PocketBaseManager.shared.performHealthCheck()
+                    
+                    if syncManager.syncComplete {
+                        await performBackgroundValidation()
+                    }
+                }
             }
-        }
-        .onAppear {
-            #if DEBUG
-            debugSupabaseConnection()
-            #endif
-            
-            supabaseManager.migrateFromDropbox()
-            
-            if albums.isEmpty {
-                albums = dataManager.savedAlbums
-            }
-        }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
         }
     }
     
@@ -79,41 +87,14 @@ struct ContentView: View {
                     showingUpload = true
                 }
             )
-            .opacity(showWelcome ? 0.0 : 1.0)
-            .scaleEffect(showWelcome ? 0.95 : 1.0)
-            .offset(y: showWelcome ? 20 : 0)
-            .animation(.easeInOut(duration: 1.0), value: showWelcome)
-            .zIndex(0)
+            .opacity(showWelcome ? 0 : 1)
+            .scaleEffect(showWelcome ? 0.98 : 1.0)
+            .blur(radius: showWelcome ? 1 : 0)
+            .animation(.spring(response: 1.4, dampingFraction: 0.8), value: showWelcome)
             
-            // NAHTLOSER ÜBERGANGS-EFFEKT
-            if isTransitioning {
-                WipeTransitionEffect(progress: revealProgress)
-                    .zIndex(1)
-            }
-            
-            // Upload View
-            if showingUpload {
-                UploadView(
-                    onAlbumCreated: { album in
-                        HapticFeedbackManager.shared.success()
-                        withAnimation(.smooth(duration: 0.5)) {
-                            albums.append(album)
-                            dataManager.saveAlbum(album)
-                            showingUpload = false
-                        }
-                    },
-                    onDismiss: {
-                        HapticFeedbackManager.shared.lightImpact()
-                        showingUpload = false
-                    }
-                )
-                .zIndex(3)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            
-            // WELCOME SCREEN - verschwindet nahtlos
+            // WELCOME SCREEN - verschwindet bei Transition
             if showWelcome {
-                MinimalWelcomeScreenWithDebug(
+                MinimalWelcomeScreen(
                     showWelcome: $showWelcome,
                     swipeProgress: $swipeProgress,
                     isTransitioning: $isTransitioning,
@@ -123,24 +104,48 @@ struct ContentView: View {
                     welcomeScale: $welcomeScale,
                     welcomeOffset: $welcomeOffset
                 )
-                .zIndex(2)
+                .zIndex(10)
             }
-            
-            // Fullscreen Album Preview
-            if let album = currentAlbum {
-                StreamingServicePreview(
-                    album: album,
-                    service: selectedService,
-                    onBack: {
-                        HapticFeedbackManager.shared.navigationBack()
-                        withAnimation(.smooth(duration: 0.4)) {
-                            currentAlbum = nil
-                        }
+        }
+        .sheet(isPresented: $showingUpload) {
+            UploadView(
+                onAlbumCreated: { album in
+                    HapticFeedbackManager.shared.success()
+                    withAnimation(.smooth(duration: 0.5)) {
+                        albums.append(album)
+                        dataManager.saveAlbum(album)
+                        showingUpload = false
                     }
-                )
-                .ignoresSafeArea()
-                .zIndex(4)
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                },
+                onDismiss: {
+                    HapticFeedbackManager.shared.lightImpact()
+                    showingUpload = false
+                }
+            )
+        }
+        .fullScreenCover(item: $currentAlbum) { album in
+            StreamingServicePreview(
+                album: album,
+                service: selectedService,
+                onBack: {
+                    HapticFeedbackManager.shared.navigationBack()
+                    currentAlbum = nil
+                }
+            )
+        }
+    }
+    
+    // MARK: - Background Validation
+    private func performBackgroundValidation() async {
+        if let profile = UserProfileManager.shared.userProfile,
+           let cloudId = profile.cloudId {
+            
+            do {
+                let _ = try await PocketBaseManager.shared.getUserById(cloudId)
+                print("✅ Background validation passed")
+            } catch {
+                print("❌ Background validation failed")
+                await syncManager.forceCompleteReset()
             }
         }
     }
@@ -210,42 +215,31 @@ struct MinimalWelcomeScreen: View {
                         }
                         .opacity(textOpacity)
                         
-                        Text("swipe up to continue")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(.white.opacity(0.4))
-                            .opacity(textOpacity * (1.0 - swipeProgress))
+                        // Minimal Swipe Hint
+                        VStack(spacing: 8) {
+                            Image(systemName: "chevron.up")
+                                .font(.system(size: 12, weight: .ultraLight))
+                                .foregroundColor(.white.opacity(0.3))
+                                .scaleEffect(1.0 + swipeProgress * 0.2)
+                            
+                            Text("swipe up")
+                                .font(.system(size: 11, weight: .light, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.4))
+                                .tracking(1.0)
+                                .opacity(1.0 - swipeProgress * 0.5)
+                        }
+                        .opacity(textOpacity * 0.8)
                     }
                 }
                 
                 Spacer()
-                
-                // Minimaler Swipe Indicator
-                VStack(spacing: 16) {
-                    VStack(spacing: 4) {
-                        ForEach(0..<3, id: \.self) { index in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(.white.opacity(0.2))
-                                .frame(width: 24, height: 1)
-                                .opacity(1.0 - swipeProgress * Double(index + 1))
-                        }
-                    }
-                    
-                    Text("swipe")
-                        .font(.system(size: 10, weight: .light, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.2))
-                        .tracking(0.5)
-                        .opacity(1.0 - swipeProgress * 2)
-                }
-                .padding(.bottom, 50)
+                Spacer()
             }
         }
         .gesture(minimalSwipeGesture)
-        .onTapGesture {
-            startSeamlessTransition()
-        }
     }
     
-    // MARK: - MINIMAL SWIPE GESTURE
+    // MARK: - Gesture Handling
     private var minimalSwipeGesture: some Gesture {
         DragGesture()
             .onChanged { value in
@@ -258,7 +252,6 @@ struct MinimalWelcomeScreen: View {
                         iconScale = 1.0 + progress * 0.1
                     }
                     
-                    // Minimales Haptic Feedback
                     if progress > 0.7 && swipeProgress <= 0.7 {
                         HapticFeedbackManager.shared.lightImpact()
                     }
@@ -275,14 +268,12 @@ struct MinimalWelcomeScreen: View {
             }
     }
     
-    // MARK: - NAHTLOSER ÜBERGANG
     private func startSeamlessTransition() {
         HapticFeedbackManager.shared.mediumImpact()
         
         isTransitioning = true
         transitionPhase = .preparing
         
-        // Nahtloser Cross-Fade
         withAnimation(.easeInOut(duration: 1.2)) {
             textOpacity = 0
             iconScale = 0.8
@@ -291,7 +282,6 @@ struct MinimalWelcomeScreen: View {
             revealProgress = 1.0
         }
         
-        // Welcome Screen entfernen nach Animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             showWelcome = false
             isTransitioning = false
@@ -301,7 +291,6 @@ struct MinimalWelcomeScreen: View {
         }
     }
     
-    // MARK: - Reset Functions
     private func resetToInitialState() {
         withAnimation(.easeOut(duration: 0.3)) {
             swipeProgress = 0
@@ -318,46 +307,5 @@ struct MinimalWelcomeScreen: View {
         welcomeScale = 1.0
         welcomeOffset = 0
         transitionPhase = .waiting
-    }
-}
-
-// MARK: - NAHTLOSER WIPE ÜBERGANG
-struct WipeTransitionEffect: View {
-    let progress: Double
-    
-    var body: some View {
-        ZStack {
-            // Vertikaler Wipe von unten nach oben
-            LinearGradient(
-                colors: [
-                    Color.black,
-                    Color.black.opacity(0.8),
-                    Color.clear
-                ],
-                startPoint: .bottom,
-                endPoint: .top
-            )
-            .offset(y: -progress * UIScreen.main.bounds.height)
-            .ignoresSafeArea()
-            .animation(.easeInOut(duration: 1.2), value: progress)
-            
-            // Subtiler Lichtstreifen
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.clear,
-                            Color.white.opacity(0.1),
-                            Color.clear
-                        ],
-                        startPoint: .bottom,
-                        endPoint: .top
-                    )
-                )
-                .frame(height: 60)
-                .offset(y: -progress * (UIScreen.main.bounds.height + 60))
-                .ignoresSafeArea()
-                .animation(.easeOut(duration: 1.0), value: progress)
-        }
     }
 }

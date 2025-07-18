@@ -549,7 +549,7 @@ func createSharingRequestFixed(album: Album, targetUsername: String, permissions
     let permissionsJson: [String: Any] = [
         "can_listen": permissions.canListen,
         "can_download": permissions.canDownload,
-        "expires_at": permissions.expiresAt?.iso8601String
+        "expires_at": permissions.expiresAt?.iso8601String as Any
     ]
     
     // Convert permissions to JSON string
