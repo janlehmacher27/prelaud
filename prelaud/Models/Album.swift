@@ -38,3 +38,8 @@ struct Album {
         return ownerId != currentUserId
     }
 }
+
+extension Album: Identifiable {
+    // The id property is already defined in the Album struct
+    // This extension just makes the conformance explicit
+}

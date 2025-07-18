@@ -1,113 +1,69 @@
 //
-//  EncodableAlbum.swift - FIXED
+//  EncodableAlbum.swift
 //  prelaud
 //
-//  Codable Wrapper für Album-Persistierung
+//  Codable version of Album for UserDefaults storage
 //
 
 import Foundation
-import UIKit
 
-// MARK: - Encodable Album
-struct EncodableAlbum: Codable {
+struct EncodableAlbum: Codable, Identifiable {
     let id: UUID
     let title: String
     let artist: String
     let songs: [EncodableSong]
     let releaseDate: Date
     let shareId: String
-    let ownerId: String?
-    let ownerUsername: String?
+    let ownerId: String
+    let ownerUsername: String
+    let sharedAt: Date?
     
-    // FIXED: Async initializer für MainActor-Zugriff
-    @MainActor
-    init(from album: Album, shareId: String) {
+    init(from album: Album, shareId: String, ownerId: String, ownerUsername: String) {
         self.id = album.id
         self.title = album.title
         self.artist = album.artist
-        self.songs = album.songs.map { EncodableSong(from: $0) }
-        self.releaseDate = album.releaseDate
-        self.shareId = shareId
-        self.ownerId = UserProfileManager.shared.userProfile?.id.uuidString
-        self.ownerUsername = UserProfileManager.shared.userProfile?.username
-    }
-    
-    // FIXED: Statischer initializer ohne UserProfileManager-Zugriff
-    init(from album: Album, shareId: String, ownerId: String?, ownerUsername: String?) {
-        self.id = album.id
-        self.title = album.title
-        self.artist = album.artist
-        self.songs = album.songs.map { EncodableSong(from: $0) }
+        self.songs = album.songs.map { song in
+            EncodableSong(
+                title: song.title,
+                artist: song.artist,
+                duration: song.duration
+            )
+        }
         self.releaseDate = album.releaseDate
         self.shareId = shareId
         self.ownerId = ownerId
         self.ownerUsername = ownerUsername
+        self.sharedAt = album.sharedAt
     }
     
+    // MARK: - Missing toAlbum() method
     func toAlbum() -> Album {
-            // Erstelle Album mit neuer ID (kann nicht vermieden werden wegen struct-Design)
-            var album = Album(
-                title: title,
-                artist: artist,
-                songs: songs.map { $0.toSong() },
-                coverImage: nil, // Cover Images werden separat behandelt
-                releaseDate: releaseDate
-            )
-            
-            // Setze sharing properties
-            album.ownerId = ownerId
-            album.ownerUsername = ownerUsername
-            album.shareId = shareId
-            
-            print("🔍 DEBUG - Created album from EncodableAlbum:")
-            print("  - Original ID: \(self.id)")
-            print("  - New ID: \(album.id)")
-            print("  - Title: \(album.title)")
-            print("  - Artist: \(album.artist)")
-            print("  - Songs: \(album.songs.count)")
-            print("  - ShareID: \(album.shareId ?? "none")")
-            print("  - Owner: \(album.ownerUsername ?? "none")")
-            
-            // Debug each song
-            for (index, song) in album.songs.enumerated() {
-                print("  - Song \(index): \(song.title) | AudioFile: \(song.audioFileName ?? "none") | SongID: \(song.songId ?? "none")")
-            }
-            
-            return album
-        }
+        var album = Album(
+            title: title,
+            artist: artist,
+            songs: songs.map { encodableSong in
+                Song(
+                    title: encodableSong.title,
+                    artist: encodableSong.artist,
+                    duration: encodableSong.duration
+                )
+            },
+            coverImage: nil, // Cover images are handled separately
+            releaseDate: releaseDate
+        )
+        
+        // Set sharing properties
+        album.shareId = shareId.isEmpty ? nil : shareId
+        album.ownerId = ownerId.isEmpty ? nil : ownerId
+        album.ownerUsername = ownerUsername.isEmpty ? nil : ownerUsername
+        album.sharedAt = sharedAt
+        
+        return album
+    }
 }
 
-// MARK: - Encodable Song
 struct EncodableSong: Codable {
-    let id: UUID
     let title: String
     let artist: String
     let duration: TimeInterval
-    let audioFileName: String?
-    let isExplicit: Bool
-    let songId: String?
-    
-    init(from song: Song) {
-        self.id = song.id
-        self.title = song.title
-        self.artist = song.artist
-        self.duration = song.duration
-        self.audioFileName = song.audioFileName
-        self.isExplicit = song.isExplicit
-        self.songId = song.songId
-    }
-    
-    func toSong() -> Song {
-            let song = Song(
-                title: title,
-                artist: artist,
-                duration: duration,
-                coverImage: nil,
-                audioFileName: audioFileName,
-                isExplicit: isExplicit,
-                songId: songId
-            )
-            
-            return song
-        }
 }

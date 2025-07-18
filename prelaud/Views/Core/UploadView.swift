@@ -1,8 +1,8 @@
 //
-//  UploadView.swift - ENHANCED WITH YEAR SELECTION
+//  UploadView.swift - FIXED TRANSPARENCY + MINIMAL PROGRESS BAR
 //  MusicPreview
 //
-//  Enhanced album creation with year selection
+//  Fixed background transparency and added minimal progress indicator
 //
 
 import SwiftUI
@@ -15,7 +15,7 @@ enum UploadStep {
     case songSelection
 }
 
-// MARK: - Audio File Model
+// MARK: - Audio File Model - UPDATED with database fields
 struct AudioFile: Identifiable {
     let id: UUID
     let songId: String
@@ -25,6 +25,22 @@ struct AudioFile: Identifiable {
     let duration: TimeInterval
     var isExplicit: Bool
     var supabaseFilename: String?
+    var displayName: String? // NEW: Database field
+    let uploadedAt: Date // NEW: Database field
+    
+    // Updated initializer with new fields
+    init(id: UUID = UUID(), songId: String, url: URL, originalFilename: String, songTitle: String, duration: TimeInterval, isExplicit: Bool = false, supabaseFilename: String? = nil, displayName: String? = nil) {
+        self.id = id
+        self.songId = songId
+        self.url = url
+        self.originalFilename = originalFilename
+        self.songTitle = songTitle
+        self.duration = duration
+        self.isExplicit = isExplicit
+        self.supabaseFilename = supabaseFilename
+        self.displayName = displayName
+        self.uploadedAt = Date() // Set current timestamp
+    }
 }
 
 struct UploadView: View {
@@ -41,7 +57,7 @@ struct UploadView: View {
     
     // Artist Name aus Profil
     private var artistName: String {
-        profileManager.displayName
+        profileManager.userProfile?.artistName ?? "Unknown Artist"
     }
     
     // Easter egg for test album
@@ -50,16 +66,9 @@ struct UploadView: View {
     
     var body: some View {
         ZStack {
-            // Minimal background
-            LinearGradient(
-                colors: [
-                    Color.black,
-                    Color.black.opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            // FIXED: Solid black background instead of transparent gradient
+            Color.black
+                .ignoresSafeArea()
             
             switch currentStep {
             case .albumInfo:
@@ -115,6 +124,7 @@ struct UploadView: View {
                 ))
             }
         }
+        .preferredColorScheme(.dark) // FIXED: Ensure dark theme
     }
     
     private func createAlbum() {
@@ -386,7 +396,8 @@ struct YearPickerSheet: View {
     
     var body: some View {
         ZStack {
-            Color.black.opacity(0.95).ignoresSafeArea()
+            // FIXED: Solid black background instead of transparent
+            Color.black.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Header
@@ -436,7 +447,7 @@ struct YearPickerSheet: View {
     }
 }
 
-// MARK: - Enhanced Song Selection Step
+// MARK: - Enhanced Song Selection Step with FIXED Progress Bar
 struct MinimalSongSelectionStep: View {
     let albumTitle: String
     let albumYear: Int
@@ -450,7 +461,7 @@ struct MinimalSongSelectionStep: View {
     @State private var showingAudioPicker = false
     @State private var isProcessing = false
     @State private var processingStatus = "Processing..."
-    @StateObject private var supabaseManager = SupabaseAudioManager.shared
+    @StateObject private var audioManager = AudioManager.shared
     
     var body: some View {
         VStack(spacing: 0) {
@@ -485,6 +496,13 @@ struct MinimalSongSelectionStep: View {
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 32)
+            
+            // NEW: Minimal Progress Bar (only when uploading)
+            if audioManager.isUploading {
+                MinimalProgressBar(progress: audioManager.uploadProgress)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
+            }
             
             // Content
             ScrollView(showsIndicators: false) {
@@ -577,10 +595,11 @@ struct MinimalSongSelectionStep: View {
                         }
                     }
                     
-                    // Processing Indicator
-                    if isProcessing {
+                    // Processing Indicator (ENHANCED)
+                    if isProcessing || audioManager.isUploading {
                         MinimalProcessingIndicator(
-                            status: supabaseManager.currentUploadStatus.isEmpty ? processingStatus : supabaseManager.currentUploadStatus
+                            status: audioManager.currentUploadStatus.isEmpty ? processingStatus : audioManager.currentUploadStatus,
+                            progress: audioManager.uploadProgress
                         )
                         .padding(.top, 20)
                     }
@@ -597,79 +616,90 @@ struct MinimalSongSelectionStep: View {
         }
     }
     
+    // UPDATED: Process Audio File with standard upload (metadata will be added later)
     private func processAudioFile(_ url: URL) {
-            HapticFeedbackManager.shared.lightImpact()
+        HapticFeedbackManager.shared.lightImpact()
+        
+        Task {
+            await MainActor.run {
+                isProcessing = true
+                processingStatus = "Processing audio file..."
+            }
             
-            Task {
+            do {
+                let asset = AVURLAsset(url: url)
+                let duration = try await asset.load(.duration)
+                let durationSeconds = CMTimeGetSeconds(duration)
+                
+                let filename = url.lastPathComponent
+                let songId = UUID().uuidString
+                
+                // NEW: Create display name from filename (without extension)
+                let displayName = String(filename.prefix(while: { $0 != "." }))
+                
+                let audioFile = AudioFile(
+                    id: UUID(),
+                    songId: songId,
+                    url: url,
+                    originalFilename: filename,
+                    songTitle: displayName, // Use display name as initial song title
+                    duration: durationSeconds,
+                    isExplicit: false,
+                    supabaseFilename: nil,
+                    displayName: displayName // NEW: Set display_name field
+                    // uploadedAt is automatically set in initializer
+                )
+                
                 await MainActor.run {
-                    isProcessing = true
-                    processingStatus = "Processing audio file..."
+                    songs.append(audioFile)
+                    processingStatus = "Uploading to cloud..."
                 }
                 
-                do {
-                    let asset = AVURLAsset(url: url)
-                    let duration = try await asset.load(.duration)
-                    let durationSeconds = CMTimeGetSeconds(duration)
-                    
-                    let filename = url.lastPathComponent
-                    let songId = UUID().uuidString
-                    
-                    let audioFile = AudioFile(
-                        id: UUID(),
-                        songId: songId,
-                        url: url,
-                        originalFilename: filename,
-                        songTitle: String(filename.prefix(while: { $0 != "." })),
-                        duration: durationSeconds,
-                        isExplicit: false,
-                        supabaseFilename: nil
-                    )
-                    
-                    await MainActor.run {
-                        songs.append(audioFile)
-                        processingStatus = "Uploading to cloud..."
+                // Upload to PocketBase with new fields
+                let supabaseFilename = try await audioManager.uploadAudioFileWithMetadata(
+                    url,
+                    filename: filename,
+                    songId: songId,
+                    displayName: displayName,
+                    uploadedAt: audioFile.uploadedAt
+                )
+                
+                await MainActor.run {
+                    if let index = songs.firstIndex(where: { $0.songId == songId }) {
+                        songs[index].supabaseFilename = supabaseFilename
                     }
                     
-                    // Upload to Supabase
-                    let supabaseFilename = try await supabaseManager.uploadAudioFile(
-                        url,
-                        filename: filename,
-                        songId: songId
-                    )
+                    HapticFeedbackManager.shared.success()
+                    processingStatus = "Upload complete!"
                     
-                    await MainActor.run {
-                        if let index = songs.firstIndex(where: { $0.songId == songId }) {
-                            songs[index].supabaseFilename = supabaseFilename
-                        }
-                        
-                        HapticFeedbackManager.shared.success()
-                        processingStatus = "Upload complete!"
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            self.isProcessing = false
-                            self.processingStatus = "Processing..."
-                        }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.isProcessing = false
+                        self.processingStatus = "Processing..."
                     }
-                    
-                    // ADDED: Clean up temporary file if it's in the temp directory
-                    if url.path.contains("tmp") {
-                        try? FileManager.default.removeItem(at: url)
-                        print("🧹 Cleaned up temporary file: \(url.lastPathComponent)")
-                    }
-                    
-                } catch {
-                    await MainActor.run {
-                        processingStatus = "Upload failed: \(error.localizedDescription)"
-                        isProcessing = false
-                    }
-                    print("❌ Failed to process audio file: \(error)")
-                    HapticFeedbackManager.shared.error()
                 }
+                
+                // Clean up temporary file if it's in the temp directory
+                if url.path.contains("tmp") {
+                    try? FileManager.default.removeItem(at: url)
+                    print("🧹 Cleaned up temporary file: \(url.lastPathComponent)")
+                }
+                
+            } catch {
+                await MainActor.run {
+                    processingStatus = "Upload failed: \(error.localizedDescription)"
+                    isProcessing = false
+                }
+                print("❌ Failed to process audio file: \(error)")
+                HapticFeedbackManager.shared.error()
             }
         }
+    }
+    
     private func removeSong(at index: Int) {
         let audioFile = songs[index]
-        SupabaseAudioManager.shared.cancelUpload(for: audioFile.songId)
+        
+        // Use AudioManager instead of SupabaseAudioManager
+        AudioManager.shared.cancelUpload(for: audioFile.songId)
         
         _ = withAnimation(.smooth(duration: 0.3)) {
             songs.remove(at: index)
@@ -677,7 +707,44 @@ struct MinimalSongSelectionStep: View {
     }
 }
 
-// MARK: - Supporting Components
+// MARK: - NEW: Minimal Progress Bar Component
+struct MinimalProgressBar: View {
+    let progress: Double
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // Progress bar track
+            HStack(spacing: 0) {
+                // Progress fill
+                Rectangle()
+                    .fill(.white.opacity(0.8))
+                    .frame(height: 1)
+                    .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
+                
+                Spacer(minLength: 0)
+            }
+            .frame(height: 1)
+            .background(.white.opacity(0.1))
+            .clipShape(Rectangle())
+            
+            // Progress percentage (minimal)
+            if progress > 0 {
+                HStack {
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 9, weight: .light, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.4))
+                        .tracking(0.5)
+                    
+                    Spacer()
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: progress)
+    }
+}
+
+// MARK: - Supporting Components (UPDATED)
 struct MinimalCoverImageSelector: View {
     @Binding var selectedImage: UIImage?
     
@@ -783,6 +850,10 @@ struct MinimalAudioFileRow: View {
                         .frame(height: 0.5),
                     alignment: .bottom
                 )
+                .onChange(of: audioFile.songTitle) { _, newValue in
+                    // Update display_name when song title changes
+                    audioFile.displayName = newValue
+                }
         }
         .padding(16)
         .background(
@@ -802,18 +873,45 @@ struct MinimalAudioFileRow: View {
     }
 }
 
+// MARK: - ENHANCED Processing Indicator with Progress
 struct MinimalProcessingIndicator: View {
     let status: String
+    let progress: Double
     
     var body: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .scaleEffect(0.8)
-                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.6)))
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(0.8)
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.6)))
+                
+                Text(status)
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.6))
+            }
             
-            Text(status)
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.6))
+            // Mini progress bar in processing indicator
+            if progress > 0 {
+                VStack(spacing: 4) {
+                    HStack(spacing: 0) {
+                        Rectangle()
+                            .fill(.white.opacity(0.6))
+                            .frame(height: 1)
+                            .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
+                        
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 1)
+                    .background(.white.opacity(0.1))
+                    .clipShape(Rectangle())
+                    
+                    Text("\(Int(progress * 100))% uploaded")
+                        .font(.system(size: 10, weight: .light, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.4))
+                        .tracking(0.5)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(.vertical, 16)
         .padding(.horizontal, 20)
@@ -825,6 +923,7 @@ struct MinimalProcessingIndicator: View {
                         .stroke(.white.opacity(0.1), lineWidth: 0.5)
                 )
         )
+        .animation(.easeInOut(duration: 0.3), value: progress)
     }
 }
 
@@ -843,6 +942,9 @@ struct AudioFilePicker: UIViewControllerRepresentable {
         
         picker.delegate = context.coordinator
         picker.allowsMultipleSelection = false
+        
+        // FIXED: Set dark theme properly for UIKit component
+        picker.overrideUserInterfaceStyle = .dark
         return picker
     }
     
@@ -866,7 +968,7 @@ struct AudioFilePicker: UIViewControllerRepresentable {
             print("🔍 File exists: \(FileManager.default.fileExists(atPath: url.path))")
             print("🔍 Is security scoped: \(url.startAccessingSecurityScopedResource())")
             
-            // FIXED: Start accessing security-scoped resource
+            // Start accessing security-scoped resource
             let accessing = url.startAccessingSecurityScopedResource()
             print("🔍 Security scoped access granted: \(accessing)")
             

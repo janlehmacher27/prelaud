@@ -1,31 +1,25 @@
-//
-//  MusicPreviewApp.swift
-//  MusicPreview
-//
-//  Updated for Supabase Storage only
-//
-
 import SwiftUI
 
 @main
 struct MusicPreviewApp: App {
-    
-    init() {
-        print("🎵 MusicPreview App starting...")
-        
-        // Lade gespeicherte Supabase URLs
-        SupabaseAudioManager.shared.loadUploadedFiles()
-        
-        print("✅ App initialization complete")
-    }
+    @StateObject private var databaseSync = DatabaseSyncManager.shared
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .onAppear {
-                    // Optional: Führe Migration von Dropbox zu Supabase durch
-                    SupabaseAudioManager.shared.migrateFromDropbox()
+            ZStack {
+                // Main Content
+                if databaseSync.shouldShowSetup {
+                    ProfileSetupView()
+                } else if databaseSync.syncComplete {
+                    ContentView()
+                } else {
+                    DatabaseSyncView()
                 }
+            }
+            .task {
+                // Perform database sync on app launch
+                await databaseSync.performStartupSync()
+            }
         }
     }
 }

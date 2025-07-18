@@ -1,8 +1,8 @@
 //
-//  ProfileSetupView.swift - ENHANCED WITH ASYNC USERNAME VALIDATION
+//  ProfileSetupView.swift - FIXED FOR POCKETBASE
 //  prelaud
 //
-//  Fixed username checking with proper async validation
+//  Fixed username checking with proper PocketBase integration
 //
 
 import SwiftUI
@@ -16,12 +16,13 @@ struct ProfileSetupView: View {
     @State private var selectedImage: UIImage?
     @State private var showingImagePicker = false
     
-    // Enhanced validation states
+    // Enhanced validation states - FIXED for PocketBase
     @State private var usernameError: String?
     @State private var artistNameError: String?
     @State private var isCreatingProfile = false
-    @State private var usernameCheckResult: UsernameCheckResult?
+    @State private var usernameAvailable: Bool?
     @State private var lastCheckedUsername = ""
+    @State private var isCheckingUsername = false
     
     enum SetupStep {
         case welcome
@@ -54,8 +55,8 @@ struct ProfileSetupView: View {
                     EnhancedUsernameStep(
                         username: $username,
                         error: $usernameError,
-                        checkResult: $usernameCheckResult,
-                        isChecking: profileManager.isCheckingUsername,
+                        checkResult: $usernameAvailable,
+                        isChecking: $isCheckingUsername,
                         onNext: { nextStep() },
                         onBack: { previousStep() },
                         onUsernameChanged: { newUsername in
@@ -107,11 +108,11 @@ struct ProfileSetupView: View {
         }
     }
     
-    // MARK: - Enhanced Username Handling
+    // MARK: - FIXED Username Handling for PocketBase
     private func handleUsernameChange(_ newUsername: String) {
         // Reset previous results
         usernameError = nil
-        usernameCheckResult = nil
+        usernameAvailable = nil
         
         // Debounce username checking
         guard !newUsername.isEmpty && newUsername != lastCheckedUsername else { return }
@@ -124,12 +125,26 @@ struct ProfileSetupView: View {
             if newUsername == username && newUsername != lastCheckedUsername {
                 lastCheckedUsername = newUsername
                 
-                let result = await profileManager.checkUsernameAvailability(newUsername)
-                
                 await MainActor.run {
-                    usernameCheckResult = result
-                    if !result.isValid {
-                        usernameError = result.errorMessage
+                    isCheckingUsername = true
+                }
+                
+                do {
+                    // FIXED: Use new PocketBase API
+                    let result = await profileManager.checkUsernameAvailability(newUsername)
+                    
+                    await MainActor.run {
+                        isCheckingUsername = false
+                        usernameAvailable = result.isValid
+                        if !result.isValid {
+                            usernameError = result.errorMessage
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        isCheckingUsername = false
+                        usernameAvailable = false
+                        usernameError = "Failed to check username availability"
                     }
                 }
             }
@@ -180,19 +195,22 @@ struct ProfileSetupView: View {
         }
     }
     
-    // MARK: - Enhanced Validation
+    // MARK: - FIXED Validation for PocketBase
     private func validateUsername() -> Bool {
         // Check if username has been validated
-        guard let result = usernameCheckResult else {
+        guard let isAvailable = usernameAvailable else {
             usernameError = "Please wait for username validation"
             HapticFeedbackManager.shared.error()
             return false
         }
         
-        if result.isValid {
+        if isAvailable {
             return true
         } else {
-            usernameError = result.errorMessage
+            // Error message should already be set from the check
+            if usernameError == nil {
+                usernameError = "Username is not available"
+            }
             HapticFeedbackManager.shared.error()
             return false
         }
@@ -207,7 +225,6 @@ struct ProfileSetupView: View {
         return validation.isValid
     }
     
-    // MARK: - Profile Creation
     private func createProfile() {
         isCreatingProfile = true
         
@@ -223,17 +240,27 @@ struct ProfileSetupView: View {
             )
             
             isCreatingProfile = false
+            
+            // WICHTIG: Explizit syncManager Status setzen
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let syncManager = DatabaseSyncManager.shared
+                syncManager.syncComplete = true
+                syncManager.needsSetup = false
+                
+                print("🔧 Profile creation complete - updating sync status")
+                print("  - shouldShowSetup: \(syncManager.shouldShowSetup)")
+            }
         }
     }
 }
 
-// MARK: - Enhanced Username Step
+// MARK: - FIXED Enhanced Username Step
 
 struct EnhancedUsernameStep: View {
     @Binding var username: String
     @Binding var error: String?
-    @Binding var checkResult: UsernameCheckResult?
-    let isChecking: Bool
+    @Binding var checkResult: Bool?
+    @Binding var isChecking: Bool
     let onNext: () -> Void
     let onBack: () -> Void
     let onUsernameChanged: (String) -> Void
@@ -266,18 +293,7 @@ struct EnhancedUsernameStep: View {
                         }
                     
                     // Validation indicator
-                    Group {
-                        if isChecking {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.6)))
-                                .scaleEffect(0.7)
-                        } else if let result = checkResult {
-                            Image(systemName: result.isValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundColor(result.isValid ? .green : .red.opacity(0.8))
-                                .font(.system(size: 16))
-                        }
-                    }
-                    .frame(width: 20, height: 20)
+                    validationIndicator
                 }
                 
                 Rectangle()
@@ -287,19 +303,7 @@ struct EnhancedUsernameStep: View {
                     .animation(.easeInOut(duration: 0.2), value: checkResult)
                 
                 // Error or status message
-                if let error = error {
-                    Text(error)
-                        .font(.system(size: 12, weight: .light))
-                        .foregroundColor(.red.opacity(0.8))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                } else if let result = checkResult, result.isValid {
-                    Text("Username is available")
-                        .font(.system(size: 12, weight: .light))
-                        .foregroundColor(.green.opacity(0.8))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+                statusMessage
             }
             .padding(.horizontal, 20)
             
@@ -315,11 +319,49 @@ struct EnhancedUsernameStep: View {
         }
     }
     
+    @ViewBuilder
+    private var validationIndicator: some View {
+        if isChecking {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.6)))
+                .scaleEffect(0.7)
+                .frame(width: 20, height: 20)
+        } else if let result = checkResult {
+            Image(systemName: result ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(result ? .green : .red.opacity(0.8))
+                .font(.system(size: 16))
+                .frame(width: 20, height: 20)
+        } else {
+            Color.clear
+                .frame(width: 20, height: 20)
+        }
+    }
+    
+    @ViewBuilder
+    private var statusMessage: some View {
+        if let error = error {
+            Text(error)
+                .font(.system(size: 12, weight: .light))
+                .foregroundColor(.red.opacity(0.8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if let result = checkResult, result {
+            Text("Username is available")
+                .font(.system(size: 12, weight: .light))
+                .foregroundColor(.green.opacity(0.8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else {
+            Color.clear
+                .frame(height: 16)
+        }
+    }
+    
     private func getUnderlineColor() -> Color {
         if isChecking {
             return .white.opacity(0.4)
         } else if let result = checkResult {
-            return result.isValid ? .green.opacity(0.6) : .red.opacity(0.6)
+            return result ? .green.opacity(0.6) : .red.opacity(0.6)
         } else if isTextFieldFocused {
             return .white.opacity(0.6)
         } else {
@@ -330,7 +372,7 @@ struct EnhancedUsernameStep: View {
     private var canContinue: Bool {
         !username.isEmpty &&
         !isChecking &&
-        checkResult?.isValid == true
+        checkResult == true
     }
 }
 
@@ -520,13 +562,26 @@ struct UltraMinimalCompleteStep: View {
                     .font(.system(size: 16, weight: .light))
                     .foregroundColor(.white.opacity(0.6))
             } else {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 24, weight: .ultraLight))
-                    .foregroundColor(.white.opacity(0.8))
-                
-                Text("ready")
-                    .font(.system(size: 20, weight: .light))
-                    .foregroundColor(.white.opacity(0.8))
+                VStack(spacing: 20) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 24, weight: .ultraLight))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Text("ready")
+                        .font(.system(size: 20, weight: .light))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    // Automatischer Fade-Out nach 2 Sekunden
+                    Text("welcome to prelaud")
+                        .font(.system(size: 14, weight: .light))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                .onAppear {
+                    // Automatisch nach 2 Sekunden zur Haupt-App
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        // Der Übergang passiert automatisch durch isProfileSetup = true
+                    }
+                }
             }
         }
     }

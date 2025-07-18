@@ -1,13 +1,13 @@
 //
-//  SharePermissions.swift - FIXED DATABASE MAPPING
+//  SharingModels.swift - CENTRAL SHARING MODELS
 //  prelaud
 //
-//  Fixed Codable mapping to match database structure
+//  Central location for all sharing-related models to avoid conflicts
 //
 
 import Foundation
 
-// MARK: - Share Permissions with Database Mapping
+// MARK: - Share Permissions
 struct SharePermissions: Codable {
     let canListen: Bool
     let canDownload: Bool
@@ -19,20 +19,76 @@ struct SharePermissions: Codable {
         self.expiresAt = expiresAt
     }
     
-    // FIXED: Custom CodingKeys to match database structure
+    // Custom CodingKeys to match database structure
     enum CodingKeys: String, CodingKey {
-        case canListen = "can_listen"       // Maps to database field
-        case canDownload = "can_download"   // Maps to database field
-        case expiresAt = "expires_at"       // Maps to database field
+        case canListen = "can_listen"
+        case canDownload = "can_download"
+        case expiresAt = "expires_at"
     }
     
     var isExpired: Bool {
         guard let expiresAt = expiresAt else { return false }
         return Date() > expiresAt
     }
+    
+    // Convert to dictionary for database storage
+    func toDictionary() -> [String: Any] {
+        var dict: [String: Any] = [
+            "can_listen": canListen,
+            "can_download": canDownload
+        ]
+        
+        if let expiresAt = expiresAt {
+            dict["expires_at"] = ISO8601DateFormatter().string(from: expiresAt)
+        }
+        
+        return dict
+    }
+    
+    // Create from dictionary (for database reading)
+    static func fromDictionary(_ dict: [String: Any]) -> SharePermissions {
+        let canListen = dict["can_listen"] as? Bool ?? true
+        let canDownload = dict["can_download"] as? Bool ?? false
+        
+        var expiresAt: Date? = nil
+        if let expiresAtString = dict["expires_at"] as? String {
+            expiresAt = ISO8601DateFormatter().date(from: expiresAtString)
+        }
+        
+        return SharePermissions(
+            canListen: canListen,
+            canDownload: canDownload,
+            expiresAt: expiresAt
+        )
+    }
 }
 
-// MARK: - Shared Album Model with Database Mapping
+// MARK: - Sharing Request
+struct SharingRequest: Identifiable, Codable {
+    let id: UUID
+    let shareId: String
+    let fromUserId: String
+    let fromUsername: String
+    let toUserId: String
+    let albumId: String
+    let albumTitle: String
+    let albumArtist: String
+    let songCount: Int
+    let permissions: SharePermissions
+    let status: SharingRequestStatus
+    let isRead: Bool
+    let createdAt: Date
+}
+
+// MARK: - Sharing Request Status
+enum SharingRequestStatus: String, Codable, CaseIterable {
+    case pending = "pending"
+    case accepted = "accepted"
+    case declined = "declined"
+    case expired = "expired"
+}
+
+// MARK: - Shared Album Model
 struct SharedAlbum: Codable, Identifiable {
     let id: UUID
     let albumId: UUID
@@ -46,7 +102,7 @@ struct SharedAlbum: Codable, Identifiable {
     let albumArtist: String
     let songCount: Int
     
-    // FIXED: Comprehensive database mapping
+    // Database mapping
     enum CodingKeys: String, CodingKey {
         case id
         case albumId = "album_id"
@@ -61,7 +117,7 @@ struct SharedAlbum: Codable, Identifiable {
         case songCount = "song_count"
     }
     
-    // FIXED: Custom decoder for better error handling
+    // Custom decoder for better error handling
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
@@ -108,43 +164,17 @@ struct SharedAlbum: Codable, Identifiable {
         self.albumArtist = albumArtist
         self.songCount = songCount
     }
-}
-
-// MARK: - Alternative: Simple JSON-based SharePermissions
-// Use this if the database stores permissions as a simple JSON object
-struct SimpleSharePermissions: Codable {
-    let canListen: Bool
-    let canDownload: Bool
-    let expiresAt: String?  // Store as string to avoid date parsing issues
     
-    init(canListen: Bool = true, canDownload: Bool = false, expiresAt: String? = nil) {
-        self.canListen = canListen
-        self.canDownload = canDownload
-        self.expiresAt = expiresAt
-    }
-    
-    var isExpired: Bool {
-        guard let expiresAtString = expiresAt,
-              let expiresAtDate = ISO8601DateFormatter().date(from: expiresAtString) else {
-            return false
-        }
-        return Date() > expiresAtDate
-    }
-    
-    // Convert to SharePermissions
-    func toSharePermissions() -> SharePermissions {
-        let expiryDate: Date?
-        if let expiresAtString = expiresAt {
-            expiryDate = ISO8601DateFormatter().date(from: expiresAtString)
-        } else {
-            expiryDate = nil
-        }
-        
-        return SharePermissions(
-            canListen: canListen,
-            canDownload: canDownload,
-            expiresAt: expiryDate
-        )
+    func debugDescription() -> String {
+        return """
+        SharedAlbum Debug:
+        - ID: \(id)
+        - Album: \(albumTitle) by \(albumArtist)
+        - Owner: @\(ownerUsername)
+        - ShareID: \(shareId)
+        - Permissions: Listen=\(permissions.canListen), Download=\(permissions.canDownload)
+        - Created: \(createdAt)
+        """
     }
 }
 
@@ -152,27 +182,36 @@ struct SimpleSharePermissions: Codable {
 enum SharingError: LocalizedError {
     case notLoggedIn
     case userNotFound
+    case userNotValid
     case invalidRequest
     case networkError
     case creationFailed
+    case updateFailed
+    case invalidResponse
     case fetchFailed
     case deletionFailed
     case permissionDenied
     case expiredShare
-    case decodingError(String)  // NEW: For decoding issues
+    case decodingError(String)
     
     var errorDescription: String? {
         switch self {
         case .notLoggedIn:
             return "You must be logged in to share albums"
         case .userNotFound:
-            return "User not found"
+            return "The target user could not be found"
+        case .userNotValid:
+            return "Current user profile is not valid"
         case .invalidRequest:
-            return "Invalid request"
+            return "Invalid sharing request"
         case .networkError:
-            return "Network error occurred"
+            return "Network connection failed"
         case .creationFailed:
-            return "Failed to create share"
+            return "Failed to create sharing request"
+        case .updateFailed:
+            return "Failed to update sharing request"
+        case .invalidResponse:
+            return "Invalid server response"
         case .fetchFailed:
             return "Failed to fetch shared albums"
         case .deletionFailed:
@@ -187,51 +226,9 @@ enum SharingError: LocalizedError {
     }
 }
 
-// MARK: - Database Helper Functions
-extension SharePermissions {
-    // Convert to dictionary for database storage
-    func toDictionary() -> [String: Any] {
-        var dict: [String: Any] = [
-            "can_listen": canListen,
-            "can_download": canDownload
-        ]
-        
-        if let expiresAt = expiresAt {
-            dict["expires_at"] = ISO8601DateFormatter().string(from: expiresAt)
-        }
-        
-        return dict
-    }
-    
-    // Create from dictionary (for database reading)
-    static func fromDictionary(_ dict: [String: Any]) -> SharePermissions {
-        let canListen = dict["can_listen"] as? Bool ?? true
-        let canDownload = dict["can_download"] as? Bool ?? false
-        
-        var expiresAt: Date? = nil
-        if let expiresAtString = dict["expires_at"] as? String {
-            expiresAt = ISO8601DateFormatter().date(from: expiresAtString)
-        }
-        
-        return SharePermissions(
-            canListen: canListen,
-            canDownload: canDownload,
-            expiresAt: expiresAt
-        )
-    }
-}
-
-// MARK: - Debug Helper
-extension SharedAlbum {
-    func debugDescription() -> String {
-        return """
-        SharedAlbum Debug:
-        - ID: \(id)
-        - Album: \(albumTitle) by \(albumArtist)
-        - Owner: @\(ownerUsername)
-        - ShareID: \(shareId)
-        - Permissions: Listen=\(permissions.canListen), Download=\(permissions.canDownload)
-        - Created: \(createdAt)
-        """
+// MARK: - Extensions
+extension Date {
+    var iso8601String: String {
+        return ISO8601DateFormatter().string(from: self)
     }
 }

@@ -1,8 +1,8 @@
 //
-//  AudioPlayerManager.swift - COMPLETE FIX
-//  MusicPreview
+//  AudioPlayerManager.swift - POCKETBASE MIGRATION FIX
+//  prelaud
 //
-//  Enhanced audio playback with better error handling and Supabase integration
+//  Fixed PocketBase compatibility and removed Supabase dependencies
 //
 
 import Foundation
@@ -103,7 +103,7 @@ class AudioPlayerManager: NSObject, ObservableObject {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }
     
-    // MARK: - Main Play Function (FIXED)
+    // MARK: - Main Play Function (FIXED FOR POCKETBASE)
     func play(song: Song) {
         print("🎵 Attempting to play song: \(song.title)")
         
@@ -139,10 +139,10 @@ class AudioPlayerManager: NSObject, ObservableObject {
     private func loadAndPlayAudio(for song: Song) async {
         print("🔍 Loading audio for: \(song.title)")
         
-        // 1. Try Supabase URL first
-        if let supabaseURL = await getSupabaseURL(for: song) {
-            print("☁️ Found Supabase URL: \(supabaseURL)")
-            await playFromURL(supabaseURL, song: song)
+        // 1. Try PocketBase URL first (FIXED)
+        if let pocketBaseURL = await getPocketBaseURL(for: song) {
+            print("☁️ Found PocketBase URL: \(pocketBaseURL)")
+            await playFromURL(pocketBaseURL, song: song)
             return
         }
         
@@ -158,9 +158,10 @@ class AudioPlayerManager: NSObject, ObservableObject {
         await simulatePlayback(for: song)
     }
     
-    private func getSupabaseURL(for song: Song) async -> URL? {
-        // Check if SupabaseAudioManager has a URL for this song
-        return SupabaseAudioManager.shared.getPlaybackURL(for: song)
+    // FIXED: Use PocketBase AudioManager instead of Supabase
+    private func getPocketBaseURL(for song: Song) async -> URL? {
+        // Use the new PocketBase AudioManager
+        return await AudioManager.shared.getAudioURL(for: song)
     }
     
     private func getLocalAudioFileURL(for song: Song) -> URL? {
@@ -196,9 +197,9 @@ class AudioPlayerManager: NSObject, ObservableObject {
         let supportedExtensions = ["mp3", "m4a", "wav", "aiff", "flac", "ogg"]
         let pathExtension = url.pathExtension.lowercased()
         
-        // For remote URLs: Trust Supabase URLs or check extension
+        // For remote URLs: Trust PocketBase URLs or check extension
         if url.scheme == "https" || url.scheme == "http" {
-            if url.absoluteString.contains("supabase.co") {
+            if url.absoluteString.contains("pockethost.io") || url.absoluteString.contains("pocketbase") {
                 return true
             }
             return supportedExtensions.contains(pathExtension) || pathExtension.isEmpty
