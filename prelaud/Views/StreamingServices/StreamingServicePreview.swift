@@ -1,8 +1,8 @@
 //
-//  StreamingServicePreview.swift - WITH WORKING SHARE FUNCTIONALITY
+//  StreamingServicePreview.swift - FIXED VERSION
 //  MusicPreview
 //
-//  Updated to include functional share album capability
+//  Fixed missing onDismiss parameter in AlbumShareSheet
 //
 
 import SwiftUI
@@ -56,7 +56,10 @@ struct StreamingServicePreview: View {
             }
         )
         .sheet(isPresented: $showingShareSheet) {
-            AlbumShareSheet(album: album)
+            // FIXED: Added onDismiss parameter
+            AlbumShareSheet(album: album, onDismiss: {
+                showingShareSheet = false
+            })
         }
     }
 }
@@ -88,330 +91,238 @@ struct ImprovedSpotifyViewWithShare: View {
                         songsSection
                         
                         // Bottom spacing for mini player
-                        Color.clear.frame(height: audioPlayer.currentSong != nil ? 140 : 40)
+                        Color.clear.frame(height: audioPlayer.currentSong != nil ? 80 : 20)
                     }
                 }
-                .coordinateSpace(name: "scroll")
+                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                    scrollOffset = value
+                }
                 
-                // Sticky Header with Back Button
-                stickyHeader
-                
-                // Mini Player Overlay
-                VStack {
-                    Spacer()
-                    
-                    if audioPlayer.currentSong != nil {
-                        AdaptiveMiniPlayer(service: .spotify)
-                            .background(
-                                Rectangle()
-                                    .fill(.clear)
-                                    .background(.ultraThinMaterial.opacity(0.05))
-                                    .ignoresSafeArea(.container, edges: .bottom)
-                            )
+                // Header Blur Effect
+                if scrollOffset > 200 {
+                    VStack {
+                        headerBlurOverlay
+                        Spacer()
                     }
                 }
-                .ignoresSafeArea(.container, edges: .bottom)
             }
         }
-        .preferredColorScheme(.dark)
+        .ignoresSafeArea()
         .actionSheet(isPresented: $showingOptions) {
             albumOptionsSheet
         }
     }
     
-    // MARK: - Background
+    // MARK: - Spotify Background
     private var spotifyBackground: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.25, green: 0.25, blue: 0.25),
-                Color(red: 0.15, green: 0.15, blue: 0.15),
-                Color(red: 0.05, green: 0.05, blue: 0.05),
+                Color(red: 0.12, green: 0.12, blue: 0.12),
                 Color.black
             ],
             startPoint: .top,
             endPoint: .bottom
         )
-        .ignoresSafeArea()
     }
     
     // MARK: - Header Section
     private var headerSection: some View {
-        GeometryReader { headerGeometry in
-            VStack(spacing: 0) {
-                Color.clear.frame(height: 70)
-                albumCover
-                albumInfo
-                controlButtons
-                Color.clear.frame(height: 10)
+        VStack(spacing: 20) {
+            // Navigation
+            HStack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                Button(action: { showingOptions = true }) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white)
+                }
             }
-            .onAppear {
-                let offset = headerGeometry.frame(in: .named("scroll")).minY
-                scrollOffset = -offset
-            }
-            .onChange(of: headerGeometry.frame(in: .named("scroll")).minY) { _, newValue in
-                scrollOffset = -newValue
-            }
+            .padding(.horizontal, 20)
+            .padding(.top, 50)
+            
+            Spacer()
+            
+            // Album Cover
+            albumCoverSection
+            
+            // Album Info
+            albumInfoSection
+            
+            // Control Buttons
+            controlButtonsSection
         }
     }
     
-    private var albumCover: some View {
-        Group {
+    // MARK: - Album Cover Section
+    private var albumCoverSection: some View {
+        VStack {
             if let coverImage = album.coverImage {
                 Image(uiImage: coverImage)
                     .resizable()
                     .aspectRatio(1, contentMode: .fit)
-                    .frame(width: 232, height: 232)
+                    .frame(width: min(UIScreen.main.bounds.width - 48, 300))
+                    .cornerRadius(8)
+                    .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
             } else {
-                Rectangle()
-                    .fill(Color(red: 0.3, green: 0.3, blue: 0.3))
-                    .frame(width: 232, height: 232)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .frame(width: min(UIScreen.main.bounds.width - 48, 300), height: min(UIScreen.main.bounds.width - 48, 300))
                     .overlay(
                         Image(systemName: "music.note")
                             .font(.system(size: 60))
                             .foregroundColor(.white.opacity(0.3))
                     )
+                    .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
             }
         }
     }
     
-    private var albumInfo: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Color.clear.frame(height: 24)
+    // MARK: - Album Info Section
+    private var albumInfoSection: some View {
+        VStack(spacing: 8) {
+            Text(album.title)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
             
-            HStack {
-                Text(album.title)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.white)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
+            Text(album.artist)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
             
-            Color.clear.frame(height: 8)
-            
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color(red: 0.4, green: 0.4, blue: 0.4))
-                    .frame(width: 20, height: 20)
-                    .overlay(
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.5))
-                    )
-                
-                Text(album.artist)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            
-            Color.clear.frame(height: 8)
-            
-            HStack {
-                Text("Album • 2025")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            
-            Color.clear.frame(height: 8)
+            Text("\(album.songs.count) songs")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.5))
         }
+        .padding(.horizontal, 24)
     }
     
-    private var controlButtons: some View {
-        HStack(spacing: 0) {
-            likeButton
-            Spacer().frame(width: 20)
-            additionalButtons
-            Spacer()
-            playbackButtons
-        }
-        .padding(.horizontal, 16)
-    }
-    
-    private var likeButton: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                isLiked.toggle()
-            }
-            HapticFeedbackManager.shared.lightImpact()
-        }) {
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.white.opacity(0.5), lineWidth: 1)
-                .frame(width: 28, height: 36)
-                .overlay(
-                    Group {
-                        if let coverImage = album.coverImage {
-                            Image(uiImage: coverImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 24, height: 32)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                        } else {
-                            Rectangle()
-                                .fill(Color(red: 0.3, green: 0.3, blue: 0.3))
-                                .frame(width: 24, height: 32)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                                .overlay(
-                                    Image(systemName: "music.note")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.white.opacity(0.3))
-                                )
-                        }
-                    }
-                )
-        }
-        .buttonStyle(MinimalButtonStyle())
-    }
-    
-    private var additionalButtons: some View {
-        HStack(spacing: 20) {
-            Button(action: {}) {
-                Image(systemName: "plus.circle")
+    // MARK: - Control Buttons Section
+    private var controlButtonsSection: some View {
+        HStack(spacing: 32) {
+            // Heart Button
+            Button(action: { isLiked.toggle() }) {
+                Image(systemName: isLiked ? "heart.fill" : "heart")
                     .font(.system(size: 24))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(isLiked ? .green : .white.opacity(0.7))
             }
-            .buttonStyle(MinimalButtonStyle())
             
+            // Download Button
             Button(action: {}) {
                 Image(systemName: "arrow.down.circle")
                     .font(.system(size: 24))
                     .foregroundColor(.white.opacity(0.7))
             }
-            .buttonStyle(MinimalButtonStyle())
             
-            // SHARE BUTTON - Updated to use onShare
-            Button(action: {
-                HapticFeedbackManager.shared.lightImpact()
-                onShare()
-            }) {
+            // Share Button
+            Button(action: onShare) {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 24))
                     .foregroundColor(.white.opacity(0.7))
             }
-            .buttonStyle(MinimalButtonStyle())
-        }
-    }
-    
-    private var playbackButtons: some View {
-        HStack(spacing: 16) {
-            Button(action: {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                    isShuffleActive.toggle()
-                }
-                HapticFeedbackManager.shared.selection()
-            }) {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 24))
-                    .foregroundColor(isShuffleActive ? Color(red: 0.11, green: 0.73, blue: 0.33) : .white.opacity(0.7))
-            }
-            .buttonStyle(MinimalButtonStyle())
             
-            Button(action: {
-                if let firstSong = album.songs.first {
-                    HapticFeedbackManager.shared.playPause()
-                    audioPlayer.play(song: firstSong)
-                }
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
-                        .frame(width: 56, height: 56)
-                    
-                    Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.black)
-                        .offset(x: audioPlayer.isPlaying ? 0 : 2)
-                }
+            // Options Button
+            Button(action: { showingOptions = true }) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 24))
+                    .foregroundColor(.white.opacity(0.7))
             }
-            .buttonStyle(MinimalButtonStyle())
+            
+            Spacer()
+            
+            // Shuffle Button
+            Button(action: { isShuffleActive.toggle() }) {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(isShuffleActive ? .green : .white.opacity(0.7))
+            }
+            
+            // Play Button
+            playButton
         }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 20)
     }
     
     // MARK: - Songs Section
     private var songsSection: some View {
         LazyVStack(spacing: 0) {
             ForEach(Array(album.songs.enumerated()), id: \.element.id) { index, song in
-                SpotifySongRowFixed(
+                SpotifySongRow(
                     song: song,
-                    index: index,
-                    isCurrentSong: audioPlayer.currentSong?.id == song.id,
+                    trackNumber: index + 1,
                     isPlaying: audioPlayer.currentSong?.id == song.id && audioPlayer.isPlaying,
                     onTap: {
-                        HapticFeedbackManager.shared.songSelected()
-                        audioPlayer.play(song: song)
+                        if audioPlayer.currentSong?.id == song.id {
+                            audioPlayer.togglePlayback()
+                        } else {
+                            audioPlayer.play(song: song)
+                        }
                     }
                 )
+                .padding(.horizontal, 20)
             }
         }
-        .background(Color.clear)
+        .background(Color.black)
     }
     
-    // MARK: - Sticky Header
-    private var stickyHeader: some View {
+    // MARK: - Header Blur Overlay
+    private var headerBlurOverlay: some View {
         VStack {
             HStack {
-                Button(action: {
-                    HapticFeedbackManager.shared.navigationBack()
-                    onBack()
-                }) {
+                Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(width: 32, height: 32)
-                        .background(
-                            Circle()
-                                .fill(.black.opacity(0.3))
-                        )
-                }
-                .buttonStyle(MinimalButtonStyle())
-                .padding(.leading, 20)
-                .padding(.top, 50)
-                
-                Spacer()
-                
-                if scrollOffset > 280 {
-                    Text(album.title)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white)
-                        .transition(.opacity)
-                        .padding(.top, 50)
                 }
                 
                 Spacer()
                 
-                if scrollOffset > 280 {
-                    stickyPlayButton
-                        .transition(.opacity)
-                        .padding(.trailing, 20)
-                        .padding(.top, 50)
-                } else {
-                    Color.clear
-                        .frame(width: 32, height: 32)
-                        .padding(.trailing, 20)
-                        .padding(.top, 50)
+                Text(album.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                Spacer()
+                
+                Button(action: { showingOptions = true }) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white)
                 }
             }
-            
-            Spacer()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
+        .background(
+            Color.black.opacity(0.8)
+                .background(.ultraThinMaterial, in: Rectangle())
+        )
     }
     
-    private var stickyPlayButton: some View {
+    // MARK: - Play Button
+    private var playButton: some View {
         Button(action: {
             if let firstSong = album.songs.first {
-                HapticFeedbackManager.shared.playPause()
-                audioPlayer.play(song: firstSong)
+                if audioPlayer.currentSong?.id == firstSong.id {
+                    audioPlayer.togglePlayback()
+                } else {
+                    audioPlayer.play(song: firstSong)
+                }
             }
         }) {
             ZStack {
                 Circle()
-                    .fill(Color(red: 0.11, green: 0.73, blue: 0.33))
-                    .frame(width: 32, height: 32)
+                    .fill(.green)
+                    .frame(width: 56, height: 56)
                 
-                Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: audioPlayer.isPlaying && album.songs.contains(where: { $0.id == audioPlayer.currentSong?.id }) ? "pause.fill" : "play.fill")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.black)
                     .offset(x: audioPlayer.isPlaying ? 0 : 1)
@@ -434,6 +345,81 @@ struct ImprovedSpotifyViewWithShare: View {
                 .cancel(Text("Cancel"))
             ]
         )
+    }
+}
+
+// MARK: - Spotify Song Row
+struct SpotifySongRow: View {
+    let song: Song
+    let trackNumber: Int
+    let isPlaying: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Track Number or Play Indicator
+                ZStack {
+                    Text("\(trackNumber)")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(isPlaying ? 0 : 0.5))
+                    
+                    if isPlaying {
+                        Image(systemName: "speaker.wave.3.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.green)
+                    }
+                }
+                .frame(width: 24)
+                
+                // Song Info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isPlaying ? .green : .white)
+                        .lineLimit(1)
+                    
+                    if !song.artist.isEmpty {
+                        Text(song.artist)
+                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                }
+                
+                Spacer()
+                
+                // Duration
+                Text(formatDuration(song.duration))
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.5))
+                
+                // More Options
+                Button(action: {}) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - Scroll Offset Preference Key
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

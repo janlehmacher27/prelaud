@@ -400,7 +400,7 @@ struct AlbumEditView: View {
             songs: [
                 Song(title: "Test Song", artist: "Test Artist", duration: 180)
             ],
-            coverImage: nil,
+            coverImage: nil as UIImage?,
             releaseDate: Date()
         )),
         onSave: { _ in },

@@ -1,8 +1,8 @@
 //
-//  RemoteLogger.swift
+//  Fixed RemoteLogger.swift
 //  prelaud
 //
-//  Remote Logging System für Debug zwischen verschiedenen Geräten
+//  FIXED: Dekodierungsfehler und Performance-Verbesserungen
 //
 
 import Foundation
@@ -155,6 +155,8 @@ class RemoteLogger: ObservableObject {
         info("==================")
     }
     
+    // MARK: - FIXED: Data Manager State Logging with Better Error Handling
+    
     @MainActor
     func logDataManagerState(_ dataManager: DataPersistenceManager) {
         database("=== DATA MANAGER STATE ===")
@@ -164,43 +166,107 @@ class RemoteLogger: ObservableObject {
         database("Is Syncing To Cloud: \(dataManager.isSyncingToCloud)")
         database("Cloud Sync Error: \(dataManager.cloudSyncError ?? "none")")
         
-        // UserDefaults check
+        // FIXED: UserDefaults check with proper error handling
         if let data = UserDefaults.standard.data(forKey: "SavedAlbums") {
             database("UserDefaults data size: \(data.count) bytes")
             
-            if let albums = try? JSONDecoder().decode([EncodableAlbum].self, from: data) {
-                database("UserDefaults contains \(albums.count) albums")
-                for (index, album) in albums.enumerated() {
-                    database("  Album \(index + 1): \(album.title) by \(album.artist)")
+            // Try both decoding strategies
+            var decodingSuccess = false
+            
+            // First try: ISO8601 strategy
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let albums = try decoder.decode([EncodableAlbum].self, from: data)
+                database("✅ UserDefaults decode successful (ISO8601): \(albums.count) albums")
+                decodingSuccess = true
+                
+                // Log first few albums for verification
+                for (index, album) in albums.prefix(3).enumerated() {
+                    database("  Album \(index + 1): '\(album.title)' by '\(album.artist)'")
                 }
-            } else {
-                error("Failed to decode albums from UserDefaults")
+                if albums.count > 3 {
+                    database("  ... and \(albums.count - 3) more albums")
+                }
+                
+            } catch {
+                database("⚠️ ISO8601 decoding failed: \(error.localizedDescription)")
+                
+                // Second try: secondsSince1970 strategy
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .secondsSince1970
+                    let albums = try decoder.decode([EncodableAlbum].self, from: data)
+                    database("✅ UserDefaults decode successful (fallback): \(albums.count) albums")
+                    decodingSuccess = true
+                    
+                } catch {
+                    database("❌ Both decoding strategies failed")
+                    database("ISO8601 Error: \(error.localizedDescription)")
+                    
+                    // Try to get more specific error information
+                    if let decodingError = error as? DecodingError {
+                        switch decodingError {
+                        case .dataCorrupted(let context):
+                            database("Data corrupted at: \(context.debugDescription)")
+                        case .keyNotFound(let key, let context):
+                            database("Key not found: \(key.stringValue) at \(context.debugDescription)")
+                        case .typeMismatch(let type, let context):
+                            database("Type mismatch for \(type) at \(context.debugDescription)")
+                        case .valueNotFound(let type, let context):
+                            database("Value not found for \(type) at \(context.debugDescription)")
+                        @unknown default:
+                            database("Unknown decoding error: \(error)")
+                        }
+                    }
+                }
             }
+            
+            if !decodingSuccess {
+                // Try to analyze the raw data
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    let preview = String(jsonString.prefix(200))
+                    database("Raw JSON preview: \(preview)...")
+                } else {
+                    database("❌ Cannot convert data to string")
+                }
+            }
+            
         } else {
-            warning("No UserDefaults data found for SavedAlbums")
+            warning("⚠️ No UserDefaults data found for SavedAlbums key")
         }
         
         database("========================")
     }
     
-    // MARK: - Persistence
+    // MARK: - Persistence with Error Handling
     
     private func saveLogs() {
         do {
-            let data = try JSONEncoder().encode(logs)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(logs)
             UserDefaults.standard.set(data, forKey: logsKey)
         } catch {
-            print("Failed to save logs: \(error)")
+            print("❌ Failed to save logs: \(error)")
         }
     }
     
     private func loadLogs() {
-        guard let data = UserDefaults.standard.data(forKey: logsKey),
-              let savedLogs = try? JSONDecoder().decode([LogEntry].self, from: data) else {
+        guard let data = UserDefaults.standard.data(forKey: logsKey) else {
             return
         }
         
-        logs = savedLogs
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let savedLogs = try decoder.decode([LogEntry].self, from: data)
+            logs = savedLogs
+        } catch {
+            print("❌ Failed to load logs: \(error)")
+            // Don't clear logs on load failure, just start fresh
+            logs = []
+        }
     }
     
     // MARK: - Utilities
@@ -208,7 +274,7 @@ class RemoteLogger: ObservableObject {
     func clearLogs() {
         logs.removeAll()
         UserDefaults.standard.removeObject(forKey: logsKey)
-        info("Logs cleared")
+        info("🧹 Logs cleared")
     }
     
     func getLogsAsString() -> String {
@@ -232,5 +298,50 @@ class RemoteLogger: ObservableObject {
         let logContent = logs.map { $0.detailMessage }.joined(separator: "\n\n")
         
         return header + logContent
+    }
+    
+    // MARK: - Performance Analysis
+    
+    func getPerformanceStats() -> String {
+        let errorCount = logs.filter { $0.level == .error }.count
+        let warningCount = logs.filter { $0.level == .warning }.count
+        let successCount = logs.filter { $0.level == .success }.count
+        let databaseCount = logs.filter { $0.level == .database }.count
+        
+        return """
+        📊 LOG PERFORMANCE STATS
+        Total Logs: \(logs.count)
+        Errors: \(errorCount)
+        Warnings: \(warningCount)
+        Success: \(successCount)
+        Database: \(databaseCount)
+        """
+    }
+    
+    // MARK: - Debug Helpers
+    
+    func findSpammyLogs() -> [String: Int] {
+        var messageCounts: [String: Int] = [:]
+        
+        for log in logs {
+            let key = "\(log.file):\(log.line) - \(log.message.prefix(50))"
+            messageCounts[key, default: 0] += 1
+        }
+        
+        // Return only messages that appear more than 5 times
+        return messageCounts.filter { $0.value > 5 }
+    }
+    
+    func logSpamAnalysis() {
+        let spammyLogs = findSpammyLogs()
+        
+        if spammyLogs.isEmpty {
+            info("✅ No spam detected in logs")
+        } else {
+            warning("⚠️ SPAM DETECTED:")
+            for (message, count) in spammyLogs.sorted(by: { $0.value > $1.value }) {
+                warning("  \(count)x: \(message)")
+            }
+        }
     }
 }

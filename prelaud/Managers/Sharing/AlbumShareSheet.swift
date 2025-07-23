@@ -1,5 +1,5 @@
 //
-//  AlbumShareSheet.swift - COMPLETE INTEGRATION
+//  AlbumShareSheet.swift - FIXED VERSION with onDismiss
 //  prelaud
 //
 //  Enhanced Album Share Sheet mit vollständiger PocketBase Integration
@@ -9,6 +9,7 @@ import SwiftUI
 
 struct AlbumShareSheet: View {
     let album: Album
+    let onDismiss: () -> Void
     @StateObject private var sharingManager = AlbumSharingManager.shared
     @StateObject private var logger = RemoteLogger.shared
     
@@ -58,6 +59,7 @@ struct AlbumShareSheet: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
+                        onDismiss()
                         dismiss()
                     }
                 }
@@ -87,63 +89,81 @@ struct AlbumShareSheet: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .frame(width: 100, height: 100)
+                .frame(width: 120, height: 120)
                 .overlay(
-                    Image(systemName: "music.note")
-                        .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.8))
+                    Group {
+                        if let coverImage = album.coverImage {
+                            Image(uiImage: coverImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 120, height: 120)
+                                .clipped()
+                                .cornerRadius(16)
+                        } else {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 40, weight: .light))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                    }
                 )
+                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
             
-            // Album Info
             VStack(spacing: 4) {
                 Text(album.title)
                     .font(.title2)
-                    .fontWeight(.bold)
+                    .fontWeight(.semibold)
                     .multilineTextAlignment(.center)
                 
                 Text("by \(album.artist)")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                 
-                Text("\(album.songs.count) songs")
+                Text("\(album.songs.count) song\(album.songs.count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
+        .padding(.vertical, 20)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.05)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
     
-    // MARK: - Username Section
+    // MARK: - Username Input Section
     
     private var usernameSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "person.circle")
                     .foregroundColor(.blue)
-                    .font(.title2)
-                
                 Text("Share with")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .fontWeight(.medium)
             }
             
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Enter username", text: $targetUsername)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .onChange(of: targetUsername) { oldValue, newValue in
-                        // Remove @ symbol if user types it
-                        if newValue.hasPrefix("@") {
-                            targetUsername = String(newValue.dropFirst())
+            TextField("Enter username", text: $targetUsername)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+                .overlay(
+                    HStack {
+                        Spacer()
+                        if !targetUsername.isEmpty {
+                            Button(action: { targetUsername = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                            .padding(.trailing, 8)
                         }
                     }
-                
-                Text("Enter the username without the @ symbol")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
+                )
+            
+            Text("The user will receive a sharing request notification")
+                .font(.caption)
+                .foregroundColor(.gray)
         }
         .padding()
         .background(
@@ -160,23 +180,20 @@ struct AlbumShareSheet: View {
             HStack {
                 Image(systemName: "lock.shield")
                     .foregroundColor(.green)
-                    .font(.title2)
-                
                 Text("Permissions")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .fontWeight(.medium)
             }
             
             VStack(spacing: 16) {
                 // Listen Permission
                 HStack {
                     Image(systemName: "play.circle")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.green)
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Allow Listening")
                             .fontWeight(.medium)
-                        Text("User can stream the album")
+                        Text("User can stream and play songs")
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
@@ -184,7 +201,7 @@ struct AlbumShareSheet: View {
                     Spacer()
                     
                     Toggle("", isOn: $canListen)
-                        .toggleStyle(SwitchToggleStyle(tint: .blue))
+                        .toggleStyle(SwitchToggleStyle(tint: .green))
                 }
                 
                 // Download Permission
@@ -195,7 +212,7 @@ struct AlbumShareSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Allow Download")
                             .fontWeight(.medium)
-                        Text("User can download songs")
+                        Text("User can save songs locally")
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
@@ -334,6 +351,7 @@ struct AlbumShareSheet: View {
             
             Button(result.isSuccess ? "Done" : "Try Again") {
                 if result.isSuccess {
+                    onDismiss()
                     dismiss()
                 } else {
                     shareResult = nil
@@ -385,14 +403,27 @@ struct AlbumShareSheet: View {
             } catch {
                 await MainActor.run {
                     let errorMessage: String
-                    if let sharingError = error as? SharingError {
-                        errorMessage = sharingError.localizedDescription
+                    if let sharingError = error as? AlbumSharingError {
+                        switch sharingError {
+                        case .userNotFound:
+                            errorMessage = "User '\(targetUsername)' not found"
+                        case .albumNotFound:
+                            errorMessage = "Album could not be found"
+                        case .networkError(let details):
+                            errorMessage = "Network error: \(details)"
+                        case .permissionDenied:
+                            errorMessage = "Permission denied"
+                        case .invalidPermissions:
+                            errorMessage = "Invalid sharing permissions"
+                        case .alreadyShared:
+                            errorMessage = "Album is already shared with this user"
+                        }
                     } else {
                         errorMessage = error.localizedDescription
                     }
                     
                     shareResult = .error(errorMessage)
-                    logger.error("❌ Album sharing failed: \(error)")
+                    logger.error("❌ Album sharing failed: \(errorMessage)")
                 }
             }
             
@@ -404,6 +435,7 @@ struct AlbumShareSheet: View {
 }
 
 // MARK: - Share Success Sheet
+
 struct ShareSuccessSheet: View {
     let album: Album
     let targetUsername: String
@@ -416,49 +448,56 @@ struct ShareSuccessSheet: View {
             VStack(spacing: 24) {
                 Spacer()
                 
-                // Success Animation
-                VStack(spacing: 16) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 80))
-                        .foregroundColor(.green)
-                        .scaleEffect(1.0)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: true)
-                    
-                    Text("Successfully Shared!")
+                // Success Icon
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.green)
+                
+                VStack(spacing: 12) {
+                    Text("Album Shared!")
                         .font(.title)
                         .fontWeight(.bold)
+                    
+                    Text("'\(album.title)' has been shared with @\(targetUsername)")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
                 }
                 
                 // Share Details
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
                     HStack {
-                        Text("Album:")
+                        Text("Share ID:")
+                            .fontWeight(.medium)
                         Spacer()
-                        Text(album.title)
-                            .fontWeight(.semibold)
+                        Text(shareId)
+                            .font(.monospaced(.caption)())
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Songs:")
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("\(album.songs.count)")
+                            .foregroundColor(.secondary)
                     }
                     
                     HStack {
                         Text("Shared with:")
+                            .fontWeight(.medium)
                         Spacer()
                         Text("@\(targetUsername)")
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    HStack {
-                        Text("Share ID:")
-                        Spacer()
-                        Text(shareId)
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                            .foregroundColor(.secondary)
                     }
                 }
                 .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.systemGray6))
+                )
                 
-                Text("The user will receive a sharing request and can accept or decline it.")
+                Text("The user will receive a notification and can accept or decline your sharing request.")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
@@ -483,6 +522,17 @@ struct ShareSuccessSheet: View {
             }
         }
     }
+}
+
+// MARK: - Album Sharing Error
+
+enum AlbumSharingError: Error {
+    case userNotFound
+    case albumNotFound
+    case networkError(String)
+    case permissionDenied
+    case invalidPermissions
+    case alreadyShared
 }
 
 // MARK: - Extensions

@@ -1,8 +1,8 @@
 //
-//  AlbumSharingManager.swift - CLEAN VERSION
+//  AlbumSharingManager.swift - COMPLETE FIXED VERSION
 //  prelaud
 //
-//  Uses central SharingModels.swift - no duplicate definitions
+//  FIXED: PocketBase verwendet eigene ID-Formate, nicht UUIDs
 //
 
 import Foundation
@@ -22,9 +22,9 @@ class AlbumSharingManager: ObservableObject {
     private let logger = RemoteLogger.shared
     
     private init() {
-        loadSharedAlbums()
         Task {
-            await loadPendingSharingRequests()
+            _ = await loadSharedAlbums()
+            _ = await loadPendingRequests()
         }
         setupDeleteNotifications()
     }
@@ -42,12 +42,14 @@ class AlbumSharingManager: ObservableObject {
             queue: .main
         ) { [weak self] notification in
             if let shareId = notification.userInfo?["shareId"] as? String {
-                self?.handleAlbumDeleted(shareId: shareId)
+                Task { @MainActor in
+                    self?.handleAlbumDeleted(shareId: shareId)
+                }
             }
         }
     }
     
-    // MARK: - Core Sharing Functions
+    // MARK: - Core Sharing Function (ENHANCED)
     
     func createSharingRequest(_ album: Album, targetUsername: String, permissions: SharePermissions) async throws -> String {
         logger.info("🔗 Creating sharing request for album: \(album.title) to user: @\(targetUsername)")
@@ -75,195 +77,126 @@ class AlbumSharingManager: ObservableObject {
         }
         
         if httpUserResponse.statusCode != 200 {
-            logger.error("❌ User lookup failed: \(httpUserResponse.statusCode)")
+            logger.error("❌ Failed to search for user: \(httpUserResponse.statusCode)")
             throw SharingError.userNotFound
         }
         
-        // Parse user lookup response
-        guard let userJsonArray = try JSONSerialization.jsonObject(with: userData) as? [[String: Any]],
-              let userDict = userJsonArray.first,
-              let userIdString = userDict["id"] as? String else {
-            logger.error("❌ User not found or invalid user data")
+        guard let userJson = try JSONSerialization.jsonObject(with: userData) as? [String: Any],
+              let userItems = userJson["items"] as? [[String: Any]],
+              let targetUser = userItems.first,
+              let targetUserId = targetUser["id"] as? String else {
+            logger.error("❌ Target user not found: @\(targetUsername)")
             throw SharingError.userNotFound
         }
         
-        logger.success("✅ Found target user with ID: \(userIdString)")
+        logger.success("✅ Found target user: \(targetUserId)")
         
-        // 3. Create sharing request with proper date formatting
+        // 3. Generate shareId and prepare album data
         let shareId = generateShareId()
-        logger.info("🔍 Generated share ID: \(shareId)")
+        let currentDate = ISO8601DateFormatter().string(from: Date())
         
-        // Create permissions as JSON string
-        let permissionsJson: [String: Any] = [
-            "can_listen": permissions.canListen,
-            "can_download": permissions.canDownload,
-            "expires_at": permissions.expiresAt?.iso8601String as Any
-        ]
-        
-        let permissionsJsonData = try JSONSerialization.data(withJSONObject: permissionsJson)
-        let permissionsJsonString = String(data: permissionsJsonData, encoding: .utf8) ?? "{}"
-        
-        // 4. Create sharing request data
-        let sharingRequestData: [String: Any] = [
-            "share_id": shareId,
-            "from_user_id": currentUser.cloudId!,
-            "from_username": currentUser.username,
-            "to_user_id": userIdString,
-            "album_id": album.id.uuidString,
-            "album_title": album.title,
-            "album_artist": album.artist,
-            "song_count": album.songs.count,
-            "permissions": permissionsJsonString,
-            "created_at": ISO8601DateFormatter().string(from: Date()),
-            "is_read": false,
-            "status": "pending"
-        ]
-        
-        logger.database("🔍 Sharing request data prepared")
-        
-        // 5. Store album data for sharing
-        let albumData = EncodableAlbum(
+        // FIXED: Store album data BEFORE creating the request, with enhanced error handling
+        let encodableAlbum = EncodableAlbum(
             from: album,
             shareId: shareId,
-            ownerId: currentUser.cloudId!,
+            ownerId: cloudId,
             ownerUsername: currentUser.username
         )
         
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         
-        if let encoded = try? encoder.encode(albumData) {
-            UserDefaults.standard.set(encoded, forKey: "SharedAlbumData_\(shareId)")
-            logger.success("✅ Album data stored locally")
+        do {
+            let albumData = try encoder.encode(encodableAlbum)
+            UserDefaults.standard.set(albumData, forKey: "SharedAlbumData_\(shareId)")
+            logger.success("✅ Album data stored locally for shareId: \(shareId)")
+            
+            // FIXED: Verify the storage immediately
+            if let storedData = UserDefaults.standard.data(forKey: "SharedAlbumData_\(shareId)") {
+                logger.info("✅ Verified album data storage: \(storedData.count) bytes")
+            } else {
+                logger.error("❌ Failed to verify album data storage")
+                throw SharingError.creationFailed
+            }
+        } catch {
+            logger.error("❌ Failed to encode album data: \(error)")
+            throw SharingError.creationFailed
         }
         
-        // 6. Send to PocketBase
-        let sharingURL = URL(string: "\(pocketBase.baseURL)/api/collections/sharing_requests/records")!
-        var request = pocketBase.createRequest(url: sharingURL, method: "POST")
-        request.httpBody = try JSONSerialization.data(withJSONObject: sharingRequestData)
+        // 4. Create sharing request
+        let requestData: [String: Any] = [
+            "share_id": shareId,
+            "album_id": album.id.uuidString,
+            "album_title": album.title,
+            "album_artist": album.artist,
+            "from_user_id": cloudId,
+            "from_username": currentUser.username,
+            "to_user_id": targetUserId,
+            "to_username": targetUsername,
+            "song_count": album.songs.count,
+            "can_listen": permissions.canListen,
+            "can_download": permissions.canDownload,
+            "expires_at": permissions.expiresAt?.ISO8601Format() ?? "",
+            "status": "pending",
+            "is_read": false,
+            "created_at": currentDate,
+            "permissions": createPermissionsDict(permissions)
+        ]
+        
+        logger.info("📋 Request data prepared for: \(shareId)")
+        
+        let requestURL = URL(string: "\(pocketBase.baseURL)/api/collections/sharing_requests/records")!
+        var request = pocketBase.createRequest(url: requestURL, method: "POST")
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestData)
         
         let (responseData, response) = try await pocketBase.urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            logger.error("❌ Invalid response type")
+            // Clean up stored data on failure
+            UserDefaults.standard.removeObject(forKey: "SharedAlbumData_\(shareId)")
             throw SharingError.networkError
         }
         
-        logger.info("📋 Sharing request response: \(httpResponse.statusCode)")
-        
-        if let responseString = String(data: responseData, encoding: .utf8) {
-            logger.debug("📄 Response: \(responseString)")
-        }
-        
-        if (200...299).contains(httpResponse.statusCode) {
-            logger.success("✅ Sharing request created successfully")
-            
-            // Refresh pending requests
-            await loadPendingSharingRequests()
-            
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+            logger.success("✅ Sharing request created successfully: \(shareId)")
             return shareId
         } else {
+            // Clean up stored data on failure
+            UserDefaults.standard.removeObject(forKey: "SharedAlbumData_\(shareId)")
             let errorMessage = String(data: responseData, encoding: .utf8) ?? "Unknown error"
-            logger.error("❌ Sharing request failed: \(httpResponse.statusCode) - \(errorMessage)")
+            logger.error("❌ Failed to create sharing request: \(httpResponse.statusCode) - \(errorMessage)")
             throw SharingError.creationFailed
         }
     }
     
-    // MARK: - Load Pending Sharing Requests
+    // MARK: - Helper Functions
     
-    func loadPendingSharingRequests() async {
-        guard let currentUser = UserProfileManager.shared.userProfile,
-              let cloudId = currentUser.cloudId else {
-            logger.warning("⚠️ No user profile - cannot load sharing requests")
-            return
+    private func createPermissionsDict(_ permissions: SharePermissions) -> [String: Any] {
+        var permissionsDict: [String: Any] = [
+            "can_listen": permissions.canListen,
+            "can_download": permissions.canDownload
+        ]
+        
+        if let expiresAt = permissions.expiresAt {
+            permissionsDict["expires_at"] = expiresAt.ISO8601Format()
+        } else {
+            permissionsDict["expires_at"] = NSNull()
         }
         
-        isLoadingRequests = true
-        logger.info("🔍 Loading pending sharing requests for @\(currentUser.username)")
-        
-        do {
-            let endpoint = "\(pocketBase.baseURL)/api/collections/sharing_requests/records?filter=to_user_id='\(cloudId)'&&status='pending'&sort=-created_at"
-            guard let url = URL(string: endpoint) else {
-                throw SharingError.invalidRequest
-            }
-            
-            let request = pocketBase.createRequest(url: url)
-            let (data, response) = try await pocketBase.urlSession.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw SharingError.networkError
-            }
-            
-            logger.info("📋 Load requests response: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode == 200 {
-                let requests = try parseSharingRequests(from: data)
-                
-                await MainActor.run {
-                    pendingSharingRequests = requests
-                    logger.success("✅ Loaded \(requests.count) pending sharing requests")
-                }
-            } else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                logger.error("❌ Failed to load requests: \(httpResponse.statusCode) - \(errorMessage)")
-            }
-            
-        } catch {
-            logger.error("❌ Error loading sharing requests: \(error)")
-            await MainActor.run {
-                sharingError = "Failed to load sharing requests: \(error.localizedDescription)"
-            }
-        }
-        
-        await MainActor.run {
-            isLoadingRequests = false
-        }
+        return permissionsDict
     }
     
-    // MARK: - Accept/Decline Sharing Requests
-    
-    func acceptSharingRequest(_ request: SharingRequest) async throws {
-        logger.info("✅ Accepting sharing request: \(request.shareId)")
+    // FIXED: Complete respondToRequest function
+    func respondToRequest(requestId: String, accept: Bool) async throws {
+        let status = accept ? "accepted" : "declined"
+        logger.info("📝 Responding to PocketBase request \(requestId): \(status)")
         
-        try await updateSharingRequestStatus(request.id.uuidString, status: "accepted")
-        
-        // Load the shared album data
-        if let albumData = UserDefaults.standard.data(forKey: "SharedAlbumData_\(request.shareId)") {
-            do {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                let encodableAlbum = try decoder.decode(EncodableAlbum.self, from: albumData)
-                let album = encodableAlbum.toAlbum()
-                
-                await MainActor.run {
-                    sharedWithMeAlbums.append(album)
-                    pendingSharingRequests.removeAll { $0.id == request.id }
-                }
-                
-                logger.success("✅ Shared album added to collection: \(album.title)")
-                
-            } catch {
-                logger.error("❌ Failed to decode shared album data: \(error)")
-            }
-        }
-    }
-    
-    func declineSharingRequest(_ request: SharingRequest) async throws {
-        logger.info("❌ Declining sharing request: \(request.shareId)")
-        
-        try await updateSharingRequestStatus(request.id.uuidString, status: "declined")
-        
-        await MainActor.run {
-            pendingSharingRequests.removeAll { $0.id == request.id }
+        // FIXED: Find the request BEFORE we modify anything
+        guard let sharingRequest = pendingSharingRequests.first(where: { $0.pocketBaseId == requestId }) else {
+            logger.error("❌ Sharing request not found: \(requestId)")
+            throw SharingError.invalidResponse
         }
         
-        // Clean up stored album data
-        UserDefaults.standard.removeObject(forKey: "SharedAlbumData_\(request.shareId)")
-        
-        logger.success("✅ Sharing request declined and cleaned up")
-    }
-    
-    private func updateSharingRequestStatus(_ requestId: String, status: String) async throws {
         let updateData: [String: Any] = [
             "status": status,
             "is_read": true
@@ -279,122 +212,296 @@ class AlbumSharingManager: ObservableObject {
             throw SharingError.networkError
         }
         
-        if !(200...299).contains(httpResponse.statusCode) {
+        if httpResponse.statusCode == 200 {
+            logger.success("✅ Request response recorded: \(status)")
+            
+            // FIXED: Remove from pending requests using PocketBase ID
+            pendingSharingRequests.removeAll { $0.pocketBaseId == requestId }
+            
+            if accept {
+                // FIXED: Add album to shared albums when accepted
+                try await handleAcceptedRequest(sharingRequest)
+                
+                // FIXED: Update the albums database with shared_with info
+                try await updateAlbumSharedWith(albumId: sharingRequest.albumId,
+                                              userId: sharingRequest.toUserId)
+            }
+            
+        } else {
             let errorMessage = String(data: responseData, encoding: .utf8) ?? "Unknown error"
-            logger.error("❌ Failed to update request status: \(httpResponse.statusCode) - \(errorMessage)")
+            logger.error("❌ Failed to respond to request: \(httpResponse.statusCode) - \(errorMessage)")
             throw SharingError.updateFailed
         }
     }
     
-    // MARK: - Load Shared Albums
+    // FIXED: New helper function to handle accepted requests
+    private func handleAcceptedRequest(_ sharingRequest: SharingRequest) async throws {
+        logger.info("✅ Processing accepted sharing request: \(sharingRequest.shareId)")
+        
+        // Check if album data is already stored
+        if let albumData = UserDefaults.standard.data(forKey: "SharedAlbumData_\(sharingRequest.shareId)") {
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let encodableAlbum = try decoder.decode(EncodableAlbum.self, from: albumData)
+                let album = encodableAlbum.toAlbum()
+                
+                // Add to shared albums if not already present
+                if !sharedWithMeAlbums.contains(where: { $0.shareId == sharingRequest.shareId }) {
+                    sharedWithMeAlbums.append(album)
+                    logger.success("✅ Added shared album to local list: \(album.title)")
+                }
+            } catch {
+                logger.error("❌ Failed to decode shared album: \(error)")
+                throw SharingError.invalidResponse
+            }
+        } else {
+            // If album data is not found, fetch it from the original sharing request
+            logger.warning("⚠️ Album data not found for shareId: \(sharingRequest.shareId)")
+            // You might want to fetch the full album data here if needed
+        }
+    }
     
-    func loadSharedAlbums() {
-        guard UserProfileManager.shared.userProfile != nil else {
-            logger.warning("⚠️ No user profile - cannot load shared albums")
-            return
+    // FIXED: New function to update albums database with shared_with info
+    private func updateAlbumSharedWith(albumId: UUID, userId: String) async throws {
+        logger.info("📝 Updating album shared_with field: \(albumId) for user: \(userId)")
+        
+        // First, get the current album to read existing shared_with
+        let albumURL = URL(string: "\(pocketBase.baseURL)/api/collections/albums/records?filter=album_id=\"\(albumId)\"")!
+        let getRequest = pocketBase.createRequest(url: albumURL)
+        
+        let (getData, getResponse) = try await pocketBase.urlSession.data(for: getRequest)
+        
+        guard let httpGetResponse = getResponse as? HTTPURLResponse else {
+            throw SharingError.networkError
         }
         
-        Task {
-            await MainActor.run {
-                isLoadingSharedAlbums = true
+        if httpGetResponse.statusCode == 200 {
+            guard let jsonObject = try JSONSerialization.jsonObject(with: getData) as? [String: Any],
+                  let items = jsonObject["items"] as? [[String: Any]],
+                  let albumRecord = items.first,
+                  let recordId = albumRecord["id"] as? String else {
+                logger.warning("⚠️ Album not found in database: \(albumId)")
+                return
             }
             
-            logger.info("📂 Loading shared albums from local storage")
+            // Get existing shared_with array
+            var sharedWith = albumRecord["shared_with"] as? [String] ?? []
             
-            var albums: [Album] = []
-            
-            let defaults = UserDefaults.standard
-            for key in defaults.dictionaryRepresentation().keys {
-                if key.hasPrefix("SharedAlbumData_") {
-                    if let data = defaults.data(forKey: key) {
-                        do {
-                            let decoder = JSONDecoder()
-                            decoder.dateDecodingStrategy = .iso8601
-                            let encodableAlbum = try decoder.decode(EncodableAlbum.self, from: data)
-                            let album = encodableAlbum.toAlbum()
-                            albums.append(album)
-                            logger.database("📂 Loaded shared album: \(album.title)")
-                        } catch {
-                            logger.warning("⚠️ Failed to decode shared album from key: \(key) - \(error)")
-                        }
+            // Add userId if not already present
+            if !sharedWith.contains(userId) {
+                sharedWith.append(userId)
+                
+                // Update the album record
+                let updateData: [String: Any] = [
+                    "shared_with": sharedWith
+                ]
+                
+                let updateURL = URL(string: "\(pocketBase.baseURL)/api/collections/albums/records/\(recordId)")!
+                var updateRequest = pocketBase.createRequest(url: updateURL, method: "PATCH")
+                updateRequest.httpBody = try JSONSerialization.data(withJSONObject: updateData)
+                
+                let (updateResponseData, updateResponse) = try await pocketBase.urlSession.data(for: updateRequest)
+                
+                guard let httpUpdateResponse = updateResponse as? HTTPURLResponse else {
+                    throw SharingError.networkError
+                }
+                
+                if httpUpdateResponse.statusCode == 200 {
+                    logger.success("✅ Updated album shared_with field successfully")
+                } else {
+                    let errorMessage = String(data: updateResponseData, encoding: .utf8) ?? "Unknown error"
+                    logger.error("❌ Failed to update album shared_with: \(httpUpdateResponse.statusCode) - \(errorMessage)")
+                }
+            } else {
+                logger.info("ℹ️ User already in shared_with list")
+            }
+        } else {
+            let errorMessage = String(data: getData, encoding: .utf8) ?? "Unknown error"
+            logger.warning("⚠️ Could not find album in database: \(httpGetResponse.statusCode) - \(errorMessage)")
+        }
+    }
+    
+    // MARK: - Load Functions (ENHANCED)
+    
+    func loadSharedAlbums() async -> [Album] {
+        isLoadingSharedAlbums = true
+        sharingError = nil
+        
+        defer {
+            Task { @MainActor in
+                self.isLoadingSharedAlbums = false
+            }
+        }
+        
+        logger.info("📂 Loading shared albums from local storage")
+        
+        var albums: [Album] = []
+        
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys {
+            if key.hasPrefix("SharedAlbumData_") {
+                if let data = defaults.data(forKey: key) {
+                    do {
+                        let decoder = JSONDecoder()
+                        decoder.dateDecodingStrategy = .iso8601
+                        let encodableAlbum = try decoder.decode(EncodableAlbum.self, from: data)
+                        let album = encodableAlbum.toAlbum()
+                        albums.append(album)
+                        logger.database("📂 Loaded shared album: \(album.title)")
+                    } catch {
+                        logger.warning("⚠️ Failed to decode shared album from key: \(key) - \(error)")
                     }
                 }
             }
-            
-            await MainActor.run {
-                sharedWithMeAlbums = albums
-                isLoadingSharedAlbums = false
-                sharingError = nil
-                logger.success("✅ Loaded \(albums.count) shared albums")
+        }
+        
+        await MainActor.run {
+            self.sharedWithMeAlbums = albums
+        }
+        logger.success("✅ Loaded \(albums.count) shared albums")
+        return albums
+    }
+    
+    // FIXED: loadPendingRequests function with better filtering
+    func loadPendingRequests() async -> [SharingRequest]? {
+        isLoadingRequests = true
+        sharingError = nil
+        
+        defer {
+            Task { @MainActor in
+                self.isLoadingRequests = false
             }
+        }
+        
+        do {
+            guard let currentUser = UserProfileManager.shared.userProfile,
+                  let userCloudId = currentUser.cloudId else {
+                logger.error("❌ No user profile for loading requests")
+                return nil
+            }
+            
+            // FIXED: Query only for pending requests explicitly
+            let url = URL(string: "\(pocketBase.baseURL)/api/collections/sharing_requests/records?filter=to_user_id=\"\(userCloudId)\"&&status=\"pending\"")!
+            logger.info("🔍 Loading pending requests for to_user_id=\(userCloudId)")
+            let request = pocketBase.createRequest(url: url)
+            
+            let (data, response) = try await pocketBase.urlSession.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw SharingError.networkError
+            }
+            
+            logger.info("📋 Load requests response: \(httpResponse.statusCode)")
+            
+            if let responseString = String(data: data, encoding: .utf8) {
+                logger.info("📄 Complete response: \(responseString)")
+            }
+            
+            if httpResponse.statusCode == 200 {
+                let requests = try parseSharingRequests(from: data)
+                
+                // FIXED: Double-check that we only return pending requests
+                let pendingOnly = requests.filter { $0.status == .pending }
+                
+                await MainActor.run {
+                    self.pendingSharingRequests = pendingOnly
+                }
+                logger.success("✅ Loaded \(pendingOnly.count) pending sharing requests")
+                return pendingOnly
+            } else {
+                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                logger.error("❌ Failed to load requests: \(httpResponse.statusCode) - \(errorMessage)")
+                await MainActor.run {
+                    self.sharingError = "Failed to load sharing requests"
+                }
+                return nil
+            }
+            
+        } catch {
+            logger.error("❌ Error loading sharing requests: \(error)")
+            await MainActor.run {
+                self.sharingError = "Failed to load sharing requests: \(error.localizedDescription)"
+            }
+            return nil
         }
     }
     
-    // MARK: - Helper Functions
-    
-    private func generateShareId() -> String {
-        return "share_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(12))"
-    }
+    // MARK: - Parser für PocketBase IDs
     
     private func parseSharingRequests(from data: Data) throws -> [SharingRequest] {
         guard let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let items = jsonObject["items"] as? [[String: Any]] ?? jsonObject as? [[String: Any]] else {
+              let items = jsonObject["items"] as? [[String: Any]] else {
             throw SharingError.invalidResponse
         }
         
-        var requests: [SharingRequest] = []
+        logger.info("🔍 Parsing \(items.count) sharing requests from PocketBase")
         
-        for item in items {
-            do {
-                let request = try parseSingleSharingRequest(from: item)
-                requests.append(request)
-            } catch {
-                logger.warning("⚠️ Failed to parse sharing request: \(error)")
-            }
+        return try items.compactMap { item in
+            try parseSharingRequest(from: item)
         }
-        
-        return requests
     }
     
-    private func parseSingleSharingRequest(from dict: [String: Any]) throws -> SharingRequest {
-        guard let idString = dict["id"] as? String,
-              let id = UUID(uuidString: idString),
-              let shareId = dict["share_id"] as? String,
-              let fromUserId = dict["from_user_id"] as? String,
-              let fromUsername = dict["from_username"] as? String,
-              let toUserId = dict["to_user_id"] as? String,
-              let albumId = dict["album_id"] as? String,
-              let albumTitle = dict["album_title"] as? String,
-              let albumArtist = dict["album_artist"] as? String,
-              let songCount = dict["song_count"] as? Int,
-              let status = dict["status"] as? String,
-              let isRead = dict["is_read"] as? Bool,
-              let createdAtString = dict["created_at"] as? String else {
-            throw SharingError.invalidResponse
+    // FIXED: Date parsing in parseSharingRequest function
+    private func parseSharingRequest(from item: [String: Any]) throws -> SharingRequest? {
+        logger.info("🔍 Parsing sharing request with keys: \(item.keys.joined(separator: ", "))")
+        
+        // FIXED: PocketBase ID ist kein UUID!
+        guard let pocketBaseId = item["id"] as? String,
+              let shareId = item["share_id"] as? String,
+              let albumIdString = item["album_id"] as? String,
+              let albumTitle = item["album_title"] as? String,
+              let fromUserId = item["from_user_id"] as? String,
+              let fromUsername = item["from_username"] as? String,
+              let toUserId = item["to_user_id"] as? String,
+              let albumArtist = item["album_artist"] as? String,
+              let createdAtString = item["created_at"] as? String else {
+            logger.warning("⚠️ Missing required fields in sharing request")
+            return nil
         }
         
-        let createdAt = ISO8601DateFormatter().date(from: createdAtString) ?? Date()
+        // Parse UUID for albumId
+        guard let albumId = UUID(uuidString: albumIdString) else {
+            logger.warning("⚠️ Invalid album UUID: \(albumIdString)")
+            return nil
+        }
+        
+        // FIXED: Parse date with multiple formatters for PocketBase format
+        let createdAt: Date
+        if let parsedDate = parsePocketBaseDate(createdAtString) {
+            createdAt = parsedDate
+        } else {
+            logger.warning("⚠️ Invalid date format: \(createdAtString) - using current date")
+            createdAt = Date()
+        }
+        
+        // Parse optional fields
+        let songCount = item["song_count"] as? Int ?? 0
+        let isRead = item["is_read"] as? Bool ?? false
         
         // Parse permissions
-        var permissions = SharePermissions(canListen: true, canDownload: false, expiresAt: nil)
-        if let permissionsString = dict["permissions"] as? String,
-           let permissionsData = permissionsString.data(using: .utf8),
-           let permissionsJson = try? JSONSerialization.jsonObject(with: permissionsData) as? [String: Any] {
-            
+        let permissions: SharePermissions
+        if let permissionsDict = item["permissions"] as? [String: Any] {
             permissions = SharePermissions(
-                canListen: permissionsJson["can_listen"] as? Bool ?? true,
-                canDownload: permissionsJson["can_download"] as? Bool ?? false,
-                expiresAt: {
-                    if let expiresAtString = permissionsJson["expires_at"] as? String {
-                        return ISO8601DateFormatter().date(from: expiresAtString)
-                    }
-                    return nil
-                }()
+                canListen: permissionsDict["can_listen"] as? Bool ?? true,
+                canDownload: permissionsDict["can_download"] as? Bool ?? false,
+                expiresAt: nil
+            )
+        } else {
+            permissions = SharePermissions(
+                canListen: item["can_listen"] as? Bool ?? true,
+                canDownload: item["can_download"] as? Bool ?? false,
+                expiresAt: nil
             )
         }
         
-        return SharingRequest(
-            id: id,
+        let statusString = item["status"] as? String ?? "pending"
+        let requestStatus = SharingRequestStatus(rawValue: statusString) ?? .pending
+        
+        // FIXED: Verwende eine generierte UUID für id, aber speichere PocketBase ID separat
+        let request = SharingRequest(
+            id: UUID(), // Generiere neue UUID für lokale Verwendung
+            pocketBaseId: pocketBaseId, // Speichere PocketBase ID separat
             shareId: shareId,
             fromUserId: fromUserId,
             fromUsername: fromUsername,
@@ -404,10 +511,37 @@ class AlbumSharingManager: ObservableObject {
             albumArtist: albumArtist,
             songCount: songCount,
             permissions: permissions,
-            status: SharingRequestStatus(rawValue: status) ?? .pending,
+            createdAt: createdAt,
             isRead: isRead,
-            createdAt: createdAt
+            status: requestStatus
         )
+        
+        logger.success("✅ Parsed sharing request: \(shareId) from @\(fromUsername) (PocketBase ID: \(pocketBaseId))")
+        return request
+    }
+
+    // FIXED: Add helper function to parse PocketBase dates
+    private func parsePocketBaseDate(_ dateString: String) -> Date? {
+        // PocketBase format: "2025-07-24 16:07:05.000Z"
+        let pocketBaseFormatter = DateFormatter()
+        pocketBaseFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSZ"
+        pocketBaseFormatter.timeZone = TimeZone(abbreviation: "UTC")
+        
+        if let date = pocketBaseFormatter.date(from: dateString) {
+            return date
+        }
+        
+        // Fallback: ISO8601 formatter
+        let iso8601Formatter = ISO8601DateFormatter()
+        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        if let date = iso8601Formatter.date(from: dateString) {
+            return date
+        }
+        
+        // Second fallback: Basic ISO8601
+        let basicISO8601 = ISO8601DateFormatter()
+        return basicISO8601.date(from: dateString)
     }
     
     private func handleAlbumDeleted(shareId: String) {
@@ -419,12 +553,16 @@ class AlbumSharingManager: ObservableObject {
         logger.success("✅ Cleaned up deleted shared album")
     }
     
+    private func generateShareId() -> String {
+        return "share_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(12))"
+    }
+    
     // MARK: - Public Interface
     
     func refreshAll() {
         Task {
-            await loadPendingSharingRequests()
-            loadSharedAlbums()
+            _ = await loadPendingRequests()
+            _ = await loadSharedAlbums()
         }
     }
     
@@ -432,10 +570,7 @@ class AlbumSharingManager: ObservableObject {
         logger.info("🗑️ Removing shared album: \(shareId)")
         
         UserDefaults.standard.removeObject(forKey: "SharedAlbumData_\(shareId)")
-        
-        await MainActor.run {
-            sharedWithMeAlbums.removeAll { $0.shareId == shareId }
-        }
+        sharedWithMeAlbums.removeAll { $0.shareId == shareId }
         
         logger.success("✅ Shared album removed")
     }

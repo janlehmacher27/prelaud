@@ -63,7 +63,7 @@ func createSharingRequest(
     let permissionsJson: [String: Any] = [
         "can_listen": permissions.canListen,
         "can_download": permissions.canDownload,
-        "expires_at": permissions.expiresAt?.iso8601String as Any
+        "expires_at": permissions.expiresAt?.ISO8601Format() as Any
     ]
     
     let permissionsJsonData = try JSONSerialization.data(withJSONObject: permissionsJson)

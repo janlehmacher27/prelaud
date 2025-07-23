@@ -510,7 +510,7 @@ struct AnimatedEQIndicator: View {
                 Song(title: "Test Song 1", artist: "Test Artist", duration: 180),
                 Song(title: "Test Song 2", artist: "Test Artist", duration: 210)
             ],
-            coverImage: nil,
+            coverImage: nil as UIImage?,
             releaseDate: Date()
         ),
         onBack: { }
